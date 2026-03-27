@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.mypy_cache/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+out/
+.DS_Store
+
+# Data directories
+backend/data/chroma/
+backend/data/repos/
+backend/data/
+
+# Temporary outputs
+search_out.txt
+search_results.txt
+*.log
