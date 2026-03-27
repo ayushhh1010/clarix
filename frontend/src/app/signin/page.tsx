@@ -46,7 +46,11 @@ export default function SignInPage() {
                         <ArrowLeft size={16} />
                         Back to home
                     </Link>
+                    <div className="auth-logo">
+                        <h1>Clarix</h1>
+                    </div>
                     <div className="auth-branding-content">
+
                         <h2>Welcome back</h2>
                         <p>
                             Sign in to access your codebases, conversations, and AI-powered

@@ -282,7 +282,7 @@ function DashboardContent() {
                             <polyline points="16 18 22 12 16 6" />
                             <polyline points="8 6 2 12 8 18" />
                         </svg>
-                        <h1>AI Copilot</h1>
+                        <h1>Clarix</h1>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         {user && (

@@ -3,7 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
 
 export const metadata: Metadata = {
-    title: "CopilotAI — AI-Powered Codebase Intelligence",
+    title: "Clarix — AI-Powered Codebase Intelligence",
     description:
         "Understand any codebase instantly with AI-powered semantic search, multi-agent architecture, and real-time streaming chat.",
 };

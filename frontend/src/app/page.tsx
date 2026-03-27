@@ -47,7 +47,7 @@ export default function LandingPage() {
                             <polyline points="16 18 22 12 16 6" />
                             <polyline points="8 6 2 12 8 18" />
                         </svg>
-                        <span>CopilotAI</span>
+                        <span>Clarix</span>
                     </Link>
 
                     <div className="landing-nav-links">
@@ -300,7 +300,7 @@ export default function LandingPage() {
                                 <polyline points="16 18 22 12 16 6" />
                                 <polyline points="8 6 2 12 8 18" />
                             </svg>
-                            <span>CopilotAI</span>
+                            <span>Clarix</span>
                         </div>
                         <p>AI-powered codebase understanding for modern engineering teams.</p>
                     </div>
@@ -326,7 +326,7 @@ export default function LandingPage() {
                     </div>
                 </div>
                 <div className="landing-footer-bottom">
-                    <p>&copy; 2026 CopilotAI. All rights reserved.</p>
+                    <p>&copy; 2026 Clarix. All rights reserved.</p>
                 </div>
             </footer>
         </div>
