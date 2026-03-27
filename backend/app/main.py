@@ -24,7 +24,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
     stream=sys.stdout,
 )
-logger = logging.getLogger("copilot")
+logger = logging.getLogger("clarix")
 
 
 # ── Lifespan Events ─────────────────────────────────────────
@@ -32,7 +32,7 @@ logger = logging.getLogger("copilot")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
-    logger.info("🚀 Starting AI Engineering Copilot")
+    logger.info("🚀 Starting Clarix")
     logger.info("   Environment: %s", settings.app_env)
     logger.info("   LLM Model:   %s", settings.llm_model)
     logger.info("   Embed Model:  %s", settings.embedding_model)
@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
 # ── Application ─────────────────────────────────────────────
 
 app = FastAPI(
-    title="AI Engineering Copilot",
+    title="Clarix",
     description=(
         "Agentic AI backend for understanding codebases, answering technical questions, "
         "debugging issues, and suggesting code modifications. "
@@ -75,7 +75,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict to frontend domain
+    allow_origins=[settings.frontend_url],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -101,7 +101,7 @@ async def health_check():
     """Basic health check endpoint."""
     return {
         "status": "healthy",
-        "service": "AI Engineering Copilot",
+        "service": "Clarix",
         "version": "1.0.0",
         "environment": settings.app_env,
     }
@@ -111,7 +111,7 @@ async def health_check():
 async def root():
     """API root — redirect to docs."""
     return {
-        "message": "AI Engineering Copilot API",
+        "message": "Clarix API",
         "docs": "/docs",
         "health": "/health",
     }

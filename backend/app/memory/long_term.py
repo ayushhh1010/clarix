@@ -44,15 +44,15 @@ async def close_redis() -> None:
 # ── Key Schemas ─────────────────────────────────────────────
 
 def _memory_key(repo_id: str, key: str) -> str:
-    return f"copilot:memory:{repo_id}:{key}"
+    return f"clarix:memory:{repo_id}:{key}"
 
 
 def _facts_key(repo_id: str) -> str:
-    return f"copilot:facts:{repo_id}"
+    return f"clarix:facts:{repo_id}"
 
 
 def _session_key(session_id: str) -> str:
-    return f"copilot:session:{session_id}"
+    return f"clarix:session:{session_id}"
 
 
 # ── Memory Operations ──────────────────────────────────────

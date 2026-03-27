@@ -25,10 +25,10 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.1"
 
     # ── PostgreSQL ──────────────────────────────────────────
-    database_url: str = "postgresql+asyncpg://copilot:copilot_secret@localhost:5432/copilot_db"
+    database_url: str = "postgresql+asyncpg://clarix:clarix_secret@localhost:5433/clarix_db"
 
     # ── Redis ───────────────────────────────────────────────
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://localhost:6380/0"
 
     # ── ChromaDB ────────────────────────────────────────────
     chroma_persist_dir: str = "./data/chroma"
