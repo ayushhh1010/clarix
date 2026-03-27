@@ -1,0 +1,117 @@
+"""
+FastAPI application entry point.
+Production-grade setup with CORS, lifespan events, structured logging,
+and health checks.
+"""
+
+import logging
+import sys
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.config import get_settings
+from app.database import init_db, close_db
+
+settings = get_settings()
+
+# ── Structured Logging ──────────────────────────────────────
+
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(asctime)s │ %(levelname)-8s │ %(name)-30s │ %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stdout,
+)
+logger = logging.getLogger("copilot")
+
+
+# ── Lifespan Events ─────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown lifecycle."""
+    logger.info("🚀 Starting AI Engineering Copilot")
+    logger.info("   Environment: %s", settings.app_env)
+    logger.info("   LLM Model:   %s", settings.llm_model)
+    logger.info("   Embed Model:  %s", settings.embedding_model)
+
+    # Initialize database tables
+    await init_db()
+    logger.info("✅ Database initialized")
+
+    # Connect Redis (lazy — will connect on first use)
+    logger.info("✅ Redis configured at %s", settings.redis_url)
+
+    yield
+
+    # Shutdown
+    logger.info("🛑 Shutting down...")
+    await close_db()
+
+    from app.memory.long_term import close_redis
+    await close_redis()
+
+    logger.info("👋 Shutdown complete")
+
+
+# ── Application ─────────────────────────────────────────────
+
+app = FastAPI(
+    title="AI Engineering Copilot",
+    description=(
+        "Agentic AI backend for understanding codebases, answering technical questions, "
+        "debugging issues, and suggesting code modifications. "
+        "Powered by LangGraph, RAG, and GPT-4o."
+    ),
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+# ── CORS ─────────────────────────────────────────────────────
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, restrict to frontend domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── Routers ──────────────────────────────────────────────────
+
+from app.routes.repo import router as repo_router
+from app.routes.chat import router as chat_router
+from app.routes.agent import router as agent_router
+from app.routes.auth import router as auth_router
+
+app.include_router(auth_router)
+app.include_router(repo_router)
+app.include_router(chat_router)
+app.include_router(agent_router)
+
+
+# ── Health Check ─────────────────────────────────────────────
+
+@app.get("/health", tags=["System"])
+async def health_check():
+    """Basic health check endpoint."""
+    return {
+        "status": "healthy",
+        "service": "AI Engineering Copilot",
+        "version": "1.0.0",
+        "environment": settings.app_env,
+    }
+
+
+@app.get("/", tags=["System"])
+async def root():
+    """API root — redirect to docs."""
+    return {
+        "message": "AI Engineering Copilot API",
+        "docs": "/docs",
+        "health": "/health",
+    }
