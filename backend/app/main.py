@@ -33,21 +33,20 @@ logger = logging.getLogger("clarix")
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
     logger.info("🚀 Starting Clarix")
-    logger.info("   Environment: %s", settings.app_env)
-    logger.info("   LLM Model:   %s", settings.llm_model)
-    logger.info("   Embed Model:  %s", settings.embedding_model)
+    logger.info("   Environment : %s", settings.app_env)
+    logger.info("   LLM Model   : %s", settings.llm_model)
+    logger.info("   Embed Model : %s", settings.embedding_model)
 
     # Initialize database tables
     await init_db()
     logger.info("✅ Database initialized")
 
-    # Preload embedding model at startup
-    from app.ingestion.embedder import _get_embeddings_model
-    _get_embeddings_model()
-    logger.info("✅ Embedding model loaded")
-
-    # Connect Redis (lazy — will connect on first use)
+    # Redis configured lazily — connects on first use
     logger.info("✅ Redis configured at %s", settings.redis_url)
+
+    # Embedding model loads lazily — on first ingestion request
+    # Avoids OOM on free tier (512MB RAM) during startup
+    logger.info("✅ Embedding model will load on first ingestion")
 
     yield
 

@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     )
 
     # ── Google (OAuth only — Gemini removed) ──────────────────
-    google_api_key: str = ""  # kept for Google OAuth, not used for LLM
+    google_api_key: str = ""
 
     # ── Groq API (production LLM) ────────────────────────────
     groq_api_key: str = ""
@@ -54,11 +54,11 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
 
     # ── Embedding (HuggingFace local, 384-dim) ──────────────
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_model: str = "BAAI/bge-small-en-v1.5"  # ← changed
     embedding_dimensions: int = 384
 
     # ── LLM ─────────────────────────────────────────────────
-    llm_model: str = "llama-3.3-70b-versatile"  # Groq model (production)
+    llm_model: str = "llama-3.3-70b-versatile"
     llm_temperature: float = 0.1
     llm_max_tokens: int = 4096
 
