@@ -9,17 +9,13 @@ python-multipart==0.0.20
 # Database
 sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0
-# psycopg2-binary removed — not needed, we use asyncpg
 alembic==1.14.1
 
 # Redis
 redis==5.2.1
 
 # Vector Database
-chromadb>=0.6.3
-
-# NumPy
-#numpy==1.26.4
+chromadb==0.5.23
 
 # LangChain & LangGraph
 langchain==0.3.14
@@ -30,8 +26,6 @@ sentence-transformers>=3.0.0
 langchain-community==0.3.14
 langchain-chroma==0.2.2
 langgraph==0.2.61
-
-# (Google Gemini removed — using Groq + Ollama + HuggingFace instead)
 
 # Git operations
 gitpython==3.1.44
