@@ -26,6 +26,17 @@ def _extract_repo_name(url: str) -> str:
     return name or "unknown_repo"
 
 
+def _inject_token(url: str) -> str:
+    """Inject GitHub PAT into URL for authenticated cloning."""
+    token = os.getenv("GITHUB_TOKEN", "")
+    if token and "github.com" in url:
+        url = url.replace(
+            "https://github.com",
+            f"https://{token}@github.com"
+        )
+    return url
+
+
 def clone_repo(url: str, repo_id: str) -> tuple[str, str]:
     """
     Clone a Git repository to the local repos directory.
@@ -41,12 +52,15 @@ def clone_repo(url: str, repo_id: str) -> tuple[str, str]:
         logger.warning("Destination %s already exists — removing", dest_str)
         shutil.rmtree(dest_str, ignore_errors=True)
 
-    logger.info("Cloning %s → %s", url, dest_str)
+    # Inject token for authenticated cloning in production
+    auth_url = _inject_token(url)
+
+    logger.info("Cloning %s → %s", url, dest_str)  # log original URL, not token URL
     try:
         Repo.clone_from(
-            url,
+            auth_url,  # ← use authenticated URL
             dest_str,
-            depth=1,  # shallow clone for speed
+            depth=1,
             single_branch=True,
         )
     except GitCommandError as exc:
