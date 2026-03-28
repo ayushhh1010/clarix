@@ -41,6 +41,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("✅ Database initialized")
 
+    # Preload embedding model at startup
+    from app.ingestion.embedder import _get_embeddings_model
+    _get_embeddings_model()
+    logger.info("✅ Embedding model loaded")
+
     # Connect Redis (lazy — will connect on first use)
     logger.info("✅ Redis configured at %s", settings.redis_url)
 

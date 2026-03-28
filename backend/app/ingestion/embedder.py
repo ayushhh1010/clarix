@@ -19,7 +19,7 @@ _embeddings_model: HuggingFaceEmbeddings | None = None
 
 # ── Batch config ──────────────────────────────────────────────
 # HuggingFace runs locally — no rate limits. Larger batches are fine.
-BATCH_SIZE = 64
+BATCH_SIZE = 8
 
 
 def _get_embeddings_model() -> HuggingFaceEmbeddings:
@@ -29,7 +29,9 @@ def _get_embeddings_model() -> HuggingFaceEmbeddings:
         _embeddings_model = HuggingFaceEmbeddings(
             model_name=settings.embedding_model,
             model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},
+            encode_kwargs={"normalize_embeddings": True,
+            "batch_size": 8
+            },
         )
         logger.info("Embedding model loaded.")
     return _embeddings_model
