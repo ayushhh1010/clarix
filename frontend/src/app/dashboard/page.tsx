@@ -526,7 +526,9 @@ function DashboardContent() {
                                 <p>
                                     {activeRepo.status === "failed"
                                         ? activeRepo.error_message || "An error occurred during ingestion."
-                                        : "Cloning, parsing, chunking, and embedding the codebase. This may take a few minutes."}
+                                        : activeRepo.status === "ingesting"
+                                            ? "⚙️ Cloning → Parsing → Chunking → Embedding... This takes 1-3 minutes."
+                                            : "Queued — starting shortly..."}
                                 </p>
                             </div>
                         )}
@@ -537,7 +539,7 @@ function DashboardContent() {
                             <polyline points="16 18 22 12 16 6" />
                             <polyline points="8 6 2 12 8 18" />
                         </svg>
-                        <h3>AI Engineering Copilot</h3>
+                        <h3>Clarix</h3>
                         <p>
                             Add a Git repository to get started. I&apos;ll analyze the codebase
                             and answer your questions with full semantic understanding.
