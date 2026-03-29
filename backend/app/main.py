@@ -44,9 +44,8 @@ async def lifespan(app: FastAPI):
     # Redis configured lazily — connects on first use
     logger.info("✅ Redis configured at %s", settings.redis_url)
 
-    # Embedding model loads lazily — on first ingestion request
-    # Avoids OOM on free tier (512MB RAM) during startup
-    logger.info("✅ Embedding model will load on first ingestion")
+    # Embeddings via HuggingFace Inference API — no local model loading
+    logger.info("✅ Embeddings via HF Inference API (%s)", settings.embedding_model)
 
     yield
 

@@ -135,8 +135,24 @@ function DashboardContent() {
     };
 
     const pollRepoStatus = useCallback(async (repoId: string) => {
+        const startTime = Date.now();
+        const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
         const poll = async () => {
             try {
+                // Timeout: stop polling after 5 min
+                if (Date.now() - startTime > TIMEOUT_MS) {
+                    setRepos((prev) =>
+                        prev.map((r) =>
+                            r.id === repoId ? { ...r, status: "failed", error_message: "Ingestion timed out. Please try again." } : r
+                        )
+                    );
+                    setActiveRepo((prev) =>
+                        prev?.id === repoId ? { ...prev, status: "failed", error_message: "Ingestion timed out. Please try again." } : prev
+                    );
+                    return;
+                }
+
                 const status = await getRepoStatus(repoId);
                 setRepos((prev) =>
                     prev.map((r) =>

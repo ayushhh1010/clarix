@@ -53,9 +53,10 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
 
-    # ── Embedding (HuggingFace local, 384-dim) ──────────────
-    embedding_model: str = "BAAI/bge-small-en-v1.5"  # ← changed
+    # ── Embedding (HuggingFace Inference API, 384-dim) ─────
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_dimensions: int = 384
+    huggingface_api_token: str = ""
 
     # ── LLM ─────────────────────────────────────────────────
     llm_model: str = "llama-3.3-70b-versatile"
