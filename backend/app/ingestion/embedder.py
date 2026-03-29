@@ -16,7 +16,7 @@ from app.ingestion.chunker import CodeChunk
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-HF_API_URL = f"https://api-inference.huggingface.co/models/{settings.embedding_model}"
+HF_API_URL = f"https://router.huggingface.co/hf-inference/models/{settings.embedding_model}"
 BATCH_SIZE = 8
 MAX_RETRIES = 5
 RETRY_DELAY = 10  # seconds
