@@ -40,7 +40,10 @@ def _prepare_text(chunk: CodeChunk) -> str:
 
 def _call_hf_api(texts: list[str]) -> list[list[float]]:
     """Call HuggingFace Inference API with retry logic for cold starts."""
-    headers = {"Authorization": f"Bearer {settings.huggingface_api_token}"}
+    token = settings.huggingface_api_token
+    if not token:
+        raise RuntimeError("HUGGINGFACE_API_TOKEN is not set. Add it to your environment variables.")
+    headers = {"Authorization": f"Bearer {token}"}
     payload = {"inputs": texts, "options": {"wait_for_model": True}}
 
     for attempt in range(MAX_RETRIES):
