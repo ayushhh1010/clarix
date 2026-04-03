@@ -1,4 +1,4 @@
-# AI Engineering Copilot
+# Clarix
 
 **A production-grade Agentic AI backend for understanding, debugging, and modifying codebases — powered by LangGraph, RAG, and Llama 3.**
 
