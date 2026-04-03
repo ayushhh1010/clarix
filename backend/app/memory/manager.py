@@ -62,10 +62,11 @@ class MemoryManager:
         self,
         conversation_id: Optional[str] = None,
         title: str = "New Conversation",
+        user_id: Optional[str] = None,
     ):
         """Get existing or create new conversation."""
         return await get_or_create_conversation(
-            self.db, self.repo_id, conversation_id, title
+            self.db, self.repo_id, conversation_id, title, user_id=user_id
         )
 
     # ── Long-term (Redis) ────────────────────────────────

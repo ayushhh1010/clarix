@@ -2,6 +2,7 @@
 Async SQLAlchemy database engine, session management, and Base model.
 """
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -47,11 +48,63 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db() -> None:
-    """Create all tables on startup."""
+    """Create all tables on startup and run lightweight migrations."""
     async with engine.begin() as conn:
         from app import models  # noqa: F401 — ensure models are imported
         await conn.run_sync(Base.metadata.create_all)
 
+    # ── Lightweight migrations (add columns if missing) ──────
+    # Since this project doesn't use Alembic, we handle simple column additions here.
+    async with engine.begin() as conn:
+        # Add user_id to repositories
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE repositories ADD COLUMN IF NOT EXISTS "
+                    "user_id UUID REFERENCES users(id) ON DELETE CASCADE"
+                )
+            )
+        except Exception:
+            pass  # Column already exists or DB doesn't support IF NOT EXISTS
+
+        # Add user_id to conversations
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS "
+                    "user_id UUID REFERENCES users(id) ON DELETE CASCADE"
+                )
+            )
+        except Exception:
+            pass
+
+        # Add password reset columns to users
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+                    "password_reset_token VARCHAR(255)"
+                )
+            )
+            await conn.execute(
+                text(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+                    "reset_token_expires TIMESTAMP"
+                )
+            )
+        except Exception:
+            pass
+
+        # Create indexes if missing
+        try:
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_repositories_user_id ON repositories(user_id)")
+            )
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_conversations_user_id ON conversations(user_id)")
+            )
+        except Exception:
+            pass
 
 async def close_db() -> None:
     """Dispose the connection pool on shutdown."""

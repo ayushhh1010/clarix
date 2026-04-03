@@ -1,18 +1,22 @@
 """
 FastAPI application entry point.
 Production-grade setup with CORS, lifespan events, structured logging,
-and health checks.
+rate limiting, and health checks.
 """
 
 import logging
 import sys
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.config import get_settings
 from app.database import init_db, close_db
+from app.rate_limit import limiter
 
 settings = get_settings()
 
@@ -73,6 +77,10 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Attach rate limiter to app
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ── CORS ─────────────────────────────────────────────────────
 

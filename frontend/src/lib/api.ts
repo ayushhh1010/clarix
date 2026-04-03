@@ -75,6 +75,15 @@ export interface MessageResponse {
     created_at: string;
 }
 
+// Pagination wrapper
+export interface PaginatedResponse<T> {
+    items: T[];
+    total: number;
+    page: number;
+    per_page: number;
+    has_more: boolean;
+}
+
 // ── Repository APIs ────────────────────────────────────────
 
 export async function uploadRepo(url: string): Promise<RepoResponse> {
@@ -99,8 +108,8 @@ export async function getRepoStatus(repoId: string) {
     return res.json();
 }
 
-export async function listRepos(): Promise<RepoResponse[]> {
-    const res = await fetch(`${API_BASE}/api/repo/`, { headers: authHeaders() });
+export async function listRepos(page = 1, perPage = 20): Promise<PaginatedResponse<RepoResponse>> {
+    const res = await fetch(`${API_BASE}/api/repo/?page=${page}&per_page=${perPage}`, { headers: authHeaders() });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
 }
@@ -260,14 +269,87 @@ export async function runAgentStream(
 
 // ── Conversation APIs ──────────────────────────────────────
 
-export async function listConversations(repoId: string): Promise<ConversationResponse[]> {
-    const res = await fetch(`${API_BASE}/api/chat/conversations/${repoId}`, { headers: authHeaders() });
+export async function listConversations(repoId: string, page = 1, perPage = 20): Promise<PaginatedResponse<ConversationResponse>> {
+    const res = await fetch(`${API_BASE}/api/chat/conversations/${repoId}?page=${page}&per_page=${perPage}`, { headers: authHeaders() });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
 }
 
-export async function getChatHistory(conversationId: string): Promise<MessageResponse[]> {
-    const res = await fetch(`${API_BASE}/api/chat/${conversationId}/history`, { headers: authHeaders() });
+export async function getChatHistory(conversationId: string, page = 1, perPage = 50): Promise<PaginatedResponse<MessageResponse>> {
+    const res = await fetch(`${API_BASE}/api/chat/${conversationId}/history?page=${page}&per_page=${perPage}`, { headers: authHeaders() });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
+}
+
+export async function deleteConversation(conversationId: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/chat/conversations/${conversationId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error(await res.text());
+}
+
+export async function renameConversation(conversationId: string, title: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/chat/conversations/${conversationId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ title }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+}
+
+// ── File Content API ───────────────────────────────────────
+
+export async function getFileContent(repoId: string, path: string): Promise<{ content: string; language: string }> {
+    const res = await fetch(`${API_BASE}/api/repo/${repoId}/file-content?path=${encodeURIComponent(path)}`, {
+        headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+}
+
+// ── Auth APIs ──────────────────────────────────────────────
+
+export async function forgotPassword(email: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+}
+
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, new_password: newPassword }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+}
+
+export async function updateProfile(name: string, email: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/auth/profile`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ name, email }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/auth/change-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+}
+
+export async function deleteAccount(): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/auth/account`, {
+        method: "DELETE",
+        headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error(await res.text());
 }

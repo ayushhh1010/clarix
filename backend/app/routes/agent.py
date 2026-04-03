@@ -1,5 +1,6 @@
 """
 Agent routes — run the full multi-agent workflow via LangGraph.
+All routes are scoped to the currently authenticated user.
 """
 
 import json
@@ -11,28 +12,40 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Repository
+from app.models import Repository, User
 from app.schemas import AgentRunRequest, AgentRunResponse, AgentStepResponse
 from app.memory.manager import MemoryManager
 from app.agents.graph import get_compiled_graph
+from app.security import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agent", tags=["Agent"])
 
 
+# ── Helper: verify repo belongs to user ──────────────────────
+
+async def _get_user_repo(db: AsyncSession, repo_id: str, user: User) -> Repository:
+    """Fetch a repo and verify it belongs to the current user."""
+    repo = await db.get(Repository, repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    if repo.user_id is not None and repo.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    return repo
+
+
 @router.post("/run", response_model=AgentRunResponse)
 async def run_agent(
     request: AgentRunRequest,
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Run the full multi-agent workflow (Planner → Retrieval → Tool → Executor).
     Returns the final answer along with all intermediate steps.
     """
-    # Validate repo
-    repo = await db.get(Repository, request.repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    # Validate repo ownership
+    repo = await _get_user_repo(db, request.repo_id, user)
     if repo.status != "ready":
         raise HTTPException(status_code=400, detail=f"Repository not ready (status: {repo.status})")
 
@@ -40,6 +53,7 @@ async def run_agent(
     conv = await memory.get_or_create_conv(
         conversation_id=request.conversation_id,
         title=f"Agent: {request.task[:80]}",
+        user_id=user.id,
     )
 
     # Save the user task as a message
@@ -103,15 +117,14 @@ async def run_agent(
 @router.post("/run/stream")
 async def run_agent_stream(
     request: AgentRunRequest,
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Run the multi-agent workflow with SSE streaming.
     Streams intermediate steps and the final answer.
     """
-    repo = await db.get(Repository, request.repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = await _get_user_repo(db, request.repo_id, user)
     if repo.status != "ready":
         raise HTTPException(status_code=400, detail=f"Repository not ready (status: {repo.status})")
 
@@ -119,6 +132,7 @@ async def run_agent_stream(
     conv = await memory.get_or_create_conv(
         conversation_id=request.conversation_id,
         title=f"Agent: {request.task[:80]}",
+        user_id=user.id,
     )
     await memory.save_user_message(conv.id, request.task)
 

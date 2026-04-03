@@ -65,6 +65,7 @@ async def get_or_create_conversation(
     repo_id: str,
     conversation_id: Optional[str] = None,
     title: str = "New Conversation",
+    user_id: Optional[str] = None,
 ) -> Conversation:
     """Get an existing conversation or create a new one."""
     if conversation_id:
@@ -72,8 +73,8 @@ async def get_or_create_conversation(
         if conv:
             return conv
 
-    conv = Conversation(repo_id=repo_id, title=title)
+    conv = Conversation(repo_id=repo_id, title=title, user_id=user_id)
     db.add(conv)
     await db.flush()
-    logger.info("Created new conversation %s for repo %s", conv.id, repo_id)
+    logger.info("Created new conversation %s for repo %s (user %s)", conv.id, repo_id, user_id)
     return conv

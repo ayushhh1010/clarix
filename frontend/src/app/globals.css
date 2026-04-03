@@ -1,16 +1,16 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
   /* ── Color System ─────────────────────── */
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-tertiary: #1a1a28;
-  --bg-elevated: #22223a;
-  --bg-hover: #2a2a42;
+  --bg-primary: #151516;
+  --bg-secondary: #0d0d0e;
+  --bg-tertiary: #1e1e20;
+  --bg-elevated: #28282b;
+  --bg-hover: rgba(255, 255, 255, 0.05);
 
-  --text-primary: #e8e8f0;
-  --text-secondary: #9898b0;
-  --text-muted: #6868808c;
+  --text-primary: #e0e0e0;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
 
   --accent: #6c5ce7;
   --accent-light: #a29bfe;
@@ -20,11 +20,16 @@
   --warning: #fdcb6e;
   --error: #ff6b6b;
 
-  --border: #2a2a3d;
-  --border-light: #363650;
+  --border: rgba(255, 255, 255, 0.05);
+  --border-light: rgba(255, 255, 255, 0.08);
 
   /* ── Sizing ───────────────────────────── */
-  --sidebar-width: 300px;
+  --sidebar-width: 250px;
+  --activity-bar-width: 48px;
+  --activity-bar-bg: #1e1e1e;
+  --sidebar-bg: #1a1a1a;
+  --main-bg: #141414;
+  --accent-indicator: #7c5cbf;
   --header-height: 60px;
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -40,7 +45,7 @@
 
 html, body {
   height: 100%;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Roboto', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
@@ -59,14 +64,217 @@ code, pre, .mono {
   overflow: hidden;
 }
 
-.sidebar {
-  width: var(--sidebar-width);
-  background: var(--bg-secondary);
+.activity-bar {
+  width: var(--activity-bar-width);
+  background: var(--activity-bar-bg);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
   flex-shrink: 0;
-  transition: width 0.3s ease;
+  z-index: 10;
+}
+
+.activity-bar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.activity-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  background: transparent;
+  border: none;
+  position: relative;
+}
+
+.activity-icon:hover {
+  color: var(--text-primary);
+}
+
+.activity-icon.active {
+  color: var(--accent-light);
+}
+
+.activity-icon.active::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--accent-indicator);
+  border-radius: 0 2px 2px 0;
+}
+
+/* ── Custom Tooltips ────────────────────── */
+
+.activity-icon[data-tooltip] {
+  position: relative;
+}
+
+.activity-icon[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px 10px;
+  background: #2a2a2c;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.activity-icon[data-tooltip]:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Tooltip arrow */
+.activity-icon[data-tooltip]::before {
+  content: '';
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+  border: 5px solid transparent;
+  border-right-color: #2a2a2c;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+  z-index: 1000;
+}
+
+/* Override the active indicator when showing tooltip arrow */
+.activity-icon.active[data-tooltip]::before {
+  content: '';
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+  border: 5px solid transparent;
+  border-right-color: #2a2a2c;
+  width: auto;
+  height: auto;
+  background: transparent;
+  border-radius: 0;
+}
+
+.activity-icon[data-tooltip]:hover::before {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Keep active indicator separate from tooltip arrow */
+.activity-icon.active .active-indicator {
+  position: absolute;
+  left: -4px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--accent-indicator);
+  border-radius: 0 2px 2px 0;
+}
+
+/* ── Settings Dropdown Menu ─────────────── */
+
+.activity-icon-wrapper {
+  position: relative;
+}
+
+.activity-menu {
+  position: absolute;
+  left: calc(100% + 8px);
+  bottom: 0;
+  min-width: 160px;
+  background: #2a2a2c;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  padding: 4px 0;
+  z-index: 1000;
+  animation: menuFadeIn 0.15s ease;
+}
+
+@keyframes menuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.activity-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.activity-menu-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.activity-menu-item.danger:hover {
+  background: rgba(255, 107, 107, 0.1);
+  color: var(--error);
+}
+
+.activity-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.collapsible-sidebar {
+  width: 0;
+  background: var(--sidebar-bg);
+  border-right: 0px solid transparent;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: width 0.2s ease;
+  overflow: hidden;
+  will-change: width;
+  white-space: nowrap; /* Prevent content from wrapping during animation */
+}
+
+.collapsible-sidebar.open {
+  width: var(--sidebar-width);
+  border-right: 1px solid var(--border);
 }
 
 .sidebar-header {
@@ -95,8 +303,8 @@ code, pre, .mono {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--text-muted);
+  letter-spacing: 1.5px;
+  color: #666;
   margin-bottom: 12px;
 }
 
@@ -108,15 +316,17 @@ code, pre, .mono {
 }
 
 .sidebar-item {
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
   font-size: 13px;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   gap: 10px;
+  box-sizing: border-box;
 }
 
 .sidebar-item:hover {
@@ -125,9 +335,10 @@ code, pre, .mono {
 }
 
 .sidebar-item.active {
-  background: var(--accent-glow);
+  background: rgba(108, 92, 231, 0.05);
   color: var(--accent-light);
   font-weight: 500;
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .sidebar-scroll {
@@ -144,6 +355,7 @@ code, pre, .mono {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  background: var(--main-bg);
 }
 
 .main-header {
@@ -278,7 +490,7 @@ code, pre, .mono {
   border-radius: var(--radius-md);
   padding: 14px 18px;
   font-size: 14px;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Roboto', 'Inter', sans-serif;
   background: var(--bg-tertiary);
   color: var(--text-primary);
   outline: none;
@@ -306,10 +518,10 @@ code, pre, .mono {
   gap: 8px;
   padding: 10px 20px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Roboto', 'Inter', sans-serif;
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
@@ -318,28 +530,29 @@ code, pre, .mono {
 .btn-primary {
   background: linear-gradient(135deg, var(--accent), #5a4bd1);
   color: white;
-  box-shadow: 0 4px 14px var(--accent-glow);
+  box-shadow: 0 0 10px rgba(108, 92, 231, 0.3);
 }
 
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px var(--accent-glow);
+  box-shadow: 0 0 14px rgba(108, 92, 231, 0.5);
 }
 
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .btn-secondary {
-  background: var(--bg-tertiary);
+  background: transparent;
   color: var(--text-primary);
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .btn-secondary:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-light);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .btn-icon {
@@ -1664,9 +1877,16 @@ code, pre, .mono {
 }
 
 .auth-submit-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.6;
   cursor: not-allowed;
   transform: none;
+  box-shadow: none;
+}
+
+/* Spinning animation for loading icons (Loader2 etc.) */
+.spinning {
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
 }
 
 .auth-divider {

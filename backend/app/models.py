@@ -38,7 +38,14 @@ class User(Base):
     oauth_provider = Column(String(50), nullable=True)    # "github" | "google"
     oauth_id = Column(String(255), nullable=True)
     avatar_url = Column(String(1024), nullable=True)
+    # Password reset fields
+    password_reset_token = Column(String(255), nullable=True)
+    reset_token_expires = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    # Relationships — user owns repos and conversations
+    repositories = relationship("Repository", back_populates="owner", cascade="all, delete-orphan")
+    conversations = relationship("Conversation", back_populates="owner", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User {self.email}>"
@@ -48,6 +55,7 @@ class Repository(Base):
     __tablename__ = "repositories"
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=_new_uuid)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     url = Column(String(1024), nullable=True)
     local_path = Column(String(1024), nullable=False)
@@ -62,7 +70,9 @@ class Repository(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
 
-    conversations = relationship("Conversation", back_populates="repository", cascade="all, delete-orphan")
+    owner = relationship("User", back_populates="repositories")
+    repo_conversations = relationship("Conversation", back_populates="repository", cascade="all, delete-orphan",
+                                      foreign_keys="[Conversation.repo_id]")
 
     def __repr__(self) -> str:
         return f"<Repository {self.name} [{self.status}]>"
@@ -72,12 +82,15 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=_new_uuid)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     repo_id = Column(UUID(as_uuid=False), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False)
     title = Column(String(512), default="New Conversation")
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
 
-    repository = relationship("Repository", back_populates="conversations")
+    owner = relationship("User", back_populates="conversations")
+    repository = relationship("Repository", back_populates="repo_conversations",
+                              foreign_keys=[repo_id])
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan", order_by="Message.created_at")
 
     def __repr__(self) -> str:

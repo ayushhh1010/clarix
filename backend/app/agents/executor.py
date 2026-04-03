@@ -45,6 +45,7 @@ async def executor_node(state: AgentState) -> dict[str, Any]:
     plan = state.get("plan", [])
     context = state.get("retrieved_context", [])
     tool_results = state.get("tool_results", [])
+    tool_analysis = state.get("tool_analysis", "")
 
     logger.info("[Executor] Synthesizing answer from %d context chunks and %d tool results",
                 len(context), len(tool_results))
@@ -72,6 +73,10 @@ async def executor_node(state: AgentState) -> dict[str, Any]:
                 f"{tr['result']}\n\n"
             )
 
+    analysis_section = ""
+    if tool_analysis:
+        analysis_section = f"\n## Initial Analysis\n\n{tool_analysis}\n\n"
+
     plan_section = "\n## Execution Plan\n\n"
     for i, step in enumerate(plan, 1):
         plan_section += f"{i}. {step}\n"
@@ -80,6 +85,7 @@ async def executor_node(state: AgentState) -> dict[str, Any]:
         f"## User Question\n\n{query}\n\n"
         f"{plan_section}\n"
         f"{context_section}\n"
+        f"{analysis_section}"
         f"{tools_section}"
     )
 

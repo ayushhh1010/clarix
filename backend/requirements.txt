@@ -44,3 +44,6 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.2.0
 pydantic[email]==2.10.4
+
+# Rate Limiting
+slowapi>=0.1.5

@@ -1,22 +1,31 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import DOMPurify from "dompurify";
+import { toast, Toaster } from "sonner";
+import { Settings, Trash2, Edit2, ChevronRight, ChevronDown, File, Folder, MoreVertical, Check, X, MessageSquare, LogOut, User } from "lucide-react";
 import {
     listRepos,
     uploadRepo,
     getRepoStatus,
     getRepoFiles,
+    getFileContent,
     chatStream,
     runAgentStream,
     listConversations,
     getChatHistory,
     deleteRepo,
+    deleteConversation,
+    renameConversation,
     type RepoResponse,
     type FileNode,
     type ConversationResponse,
 } from "@/lib/api";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
+import SettingsModal from "@/components/SettingsModal";
+import FileViewer from "@/components/FileViewer";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -36,6 +45,8 @@ function DashboardContent() {
     const [repos, setRepos] = useState<RepoResponse[]>([]);
     const [activeRepo, setActiveRepo] = useState<RepoResponse | null>(null);
     const [files, setFiles] = useState<FileNode[]>([]);
+    const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
+    const [fileContents, setFileContents] = useState<Map<string, FileNode[]>>(new Map());
     const [conversations, setConversations] = useState<ConversationResponse[]>([]);
     const [activeConvId, setActiveConvId] = useState<string | undefined>();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -45,19 +56,55 @@ function DashboardContent() {
     const [uploadUrl, setUploadUrl] = useState("");
     const [isUploading, setIsUploading] = useState(false);
     const [useAgent, setUseAgent] = useState(false);
+    // New state for file viewer
+    const [viewingFile, setViewingFile] = useState<{ path: string; content: string; language: string } | null>(null);
+    // New state for conversation management
+    const [editingConvId, setEditingConvId] = useState<string | null>(null);
+    const [editingConvTitle, setEditingConvTitle] = useState("");
+    // Settings modal
+    const [showSettings, setShowSettings] = useState(false);
+    const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+    const [activeTray, setActiveTray] = useState<"repos" | "conversations" | null>("repos");
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
+    const settingsMenuRef = useRef<HTMLDivElement>(null);
+
+    // Close settings menu on click outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (settingsMenuRef.current && !settingsMenuRef.current.contains(event.target as Node)) {
+                setShowSettingsMenu(false);
+            }
+        };
+
+        if (showSettingsMenu) {
+            document.addEventListener("mousedown", handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [showSettingsMenu]);
 
     // Scroll to bottom on new messages
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    // Load repos on mount
+    // Load repos when user changes (login/logout/switch)
     useEffect(() => {
-        loadRepos();
-    }, []);
+        // Reset all state on user change for clean isolation
+        setActiveRepo(null);
+        setFiles([]);
+        setConversations([]);
+        setMessages([]);
+        setActiveConvId(undefined);
+        if (user) {
+            loadRepos();
+        } else {
+            setRepos([]);
+        }
+    }, [user?.id]);
 
     // Load files and conversations when active repo changes
     useEffect(() => {
@@ -72,7 +119,7 @@ function DashboardContent() {
     const loadRepos = async () => {
         try {
             const data = await listRepos();
-            setRepos(data);
+            setRepos(data.items);
         } catch (err) {
             console.error("Failed to load repos:", err);
         }
@@ -84,13 +131,14 @@ function DashboardContent() {
             setFiles(data);
         } catch (err) {
             console.error("Failed to load files:", err);
+            setFiles([]);
         }
     };
 
     const loadConversations = async (repoId: string) => {
         try {
             const data = await listConversations(repoId);
-            setConversations(data);
+            setConversations(data.items);
         } catch (err) {
             console.error("Failed to load conversations:", err);
         }
@@ -100,7 +148,7 @@ function DashboardContent() {
         try {
             const data = await getChatHistory(convId);
             setMessages(
-                data.map((m) => ({
+                data.items.map((m) => ({
                     id: m.id,
                     role: m.role as "user" | "assistant",
                     content: m.content,
@@ -123,12 +171,13 @@ function DashboardContent() {
             setShowUpload(false);
             setUploadUrl("");
             setActiveRepo(repo);
+            toast.success("Repository added! Starting analysis...");
 
             // Poll for ingestion status
             pollRepoStatus(repo.id);
         } catch (err) {
             console.error("Upload failed:", err);
-            alert("Failed to upload repository. Check the URL and try again.");
+            toast.error("Failed to upload repository. Check the URL and try again.");
         } finally {
             setIsUploading(false);
         }
@@ -276,8 +325,10 @@ function DashboardContent() {
                 setFiles([]);
                 setConversations([]);
             }
+            toast.success("Repository deleted");
         } catch (err) {
             console.error("Delete failed:", err);
+            toast.error("Failed to delete repository");
         }
     };
 
@@ -286,12 +337,150 @@ function DashboardContent() {
         setMessages([]);
     };
 
+    // ── File Explorer Functions ─────────────────────────────
+
+    const toggleDirectory = async (path: string) => {
+        if (!activeRepo) return;
+        
+        if (expandedDirs.has(path)) {
+            setExpandedDirs(prev => {
+                const next = new Set(prev);
+                next.delete(path);
+                return next;
+            });
+        } else {
+            // Load directory contents if not cached
+            if (!fileContents.has(path)) {
+                try {
+                    const contents = await getRepoFiles(activeRepo.id, path);
+                    setFileContents(prev => new Map(prev).set(path, contents));
+                } catch (err) {
+                    console.error("Failed to load directory:", err);
+                    toast.error("Failed to load directory contents");
+                    return;
+                }
+            }
+            setExpandedDirs(prev => new Set(prev).add(path));
+        }
+    };
+
+    const openFile = async (path: string) => {
+        if (!activeRepo) return;
+        try {
+            const { content, language } = await getFileContent(activeRepo.id, path);
+            setViewingFile({ path, content, language });
+        } catch (err) {
+            console.error("Failed to load file:", err);
+            toast.error("Failed to load file contents");
+        }
+    };
+
+    // ── Conversation Management Functions ───────────────────
+
+    const handleDeleteConversation = async (convId: string) => {
+        if (!confirm("Delete this conversation?")) return;
+        try {
+            await deleteConversation(convId);
+            setConversations(prev => prev.filter(c => c.id !== convId));
+            if (activeConvId === convId) {
+                setActiveConvId(undefined);
+                setMessages([]);
+            }
+            toast.success("Conversation deleted");
+        } catch (err) {
+            console.error("Delete conversation failed:", err);
+            toast.error("Failed to delete conversation");
+        }
+    };
+
+    const handleRenameConversation = async (convId: string) => {
+        if (!editingConvTitle.trim()) return;
+        try {
+            await renameConversation(convId, editingConvTitle.trim());
+            setConversations(prev => 
+                prev.map(c => c.id === convId ? { ...c, title: editingConvTitle.trim() } : c)
+            );
+            setEditingConvId(null);
+            setEditingConvTitle("");
+            toast.success("Conversation renamed");
+        } catch (err) {
+            console.error("Rename failed:", err);
+            toast.error("Failed to rename conversation");
+        }
+    };
+
+    const startEditingConversation = (conv: ConversationResponse) => {
+        setEditingConvId(conv.id);
+        setEditingConvTitle(conv.title);
+    };
+
     // ── Render ──────────────────────────────────────────────
 
     return (
         <div className="app-layout">
-            {/* ── Sidebar ──────────────────────── */}
-            <aside className="sidebar">
+            <Toaster position="top-right" richColors />
+            
+            {/* ── Activity Bar ─────────────────── */}
+            <nav className="activity-bar">
+                <div className="activity-bar-actions">
+                    <button 
+                        className={`activity-icon ${activeTray === "repos" ? "active" : ""}`}
+                        onClick={() => setActiveTray(activeTray === "repos" ? null : "repos")}
+                        data-tooltip="Repositories"
+                    >
+                        <Folder size={22} strokeWidth={1.5} />
+                    </button>
+                    {activeRepo?.status === "ready" && (
+                        <button 
+                            className={`activity-icon ${activeTray === "conversations" ? "active" : ""}`}
+                            onClick={() => setActiveTray(activeTray === "conversations" ? null : "conversations")}
+                            data-tooltip="Conversations"
+                        >
+                            <MessageSquare size={22} strokeWidth={1.5} />
+                        </button>
+                    )}
+                </div>
+
+                <div className="activity-bar-actions">
+                    <div className="activity-icon-wrapper" ref={settingsMenuRef}>
+                        <button
+                            className={`activity-icon ${showSettingsMenu ? "active" : ""}`}
+                            onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+                            data-tooltip={showSettingsMenu ? undefined : "Settings"}
+                        >
+                            <Settings size={22} strokeWidth={1.5} />
+                        </button>
+                        {showSettingsMenu && (
+                            <div className="activity-menu">
+                                <button 
+                                    className="activity-menu-item"
+                                    onClick={() => {
+                                        setShowSettingsMenu(false);
+                                        setShowSettings(true);
+                                    }}
+                                >
+                                    <User size={16} />
+                                    Profile
+                                </button>
+                                <div className="activity-menu-divider" />
+                                <button 
+                                    className="activity-menu-item danger"
+                                    onClick={() => {
+                                        setShowSettingsMenu(false);
+                                        logout();
+                                    }}
+                                >
+                                    <LogOut size={16} />
+                                    Logout
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </nav>
+
+            {/* ── Collapsible Tray ─────────────── */}
+            <aside className={`collapsible-sidebar ${activeTray ? "open" : ""}`}>
                 <div className="sidebar-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--accent-light)" }}>
@@ -300,97 +489,145 @@ function DashboardContent() {
                         </svg>
                         <h1>Clarix</h1>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        {user && (
-                            <span style={{ fontSize: 11, color: "var(--text-muted)", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {user.name || user.email}
-                            </span>
-                        )}
-                        <button
-                            onClick={logout}
-                            title="Logout"
-                            style={{
-                                background: "rgba(255,255,255,0.05)",
-                                border: "1px solid rgba(255,255,255,0.1)",
-                                borderRadius: 6,
-                                padding: "4px 8px",
-                                fontSize: 11,
-                                color: "var(--text-secondary)",
-                                cursor: "pointer",
-                            }}
-                        >
-                            Logout
-                        </button>
-                    </div>
                 </div>
 
-                <div className="sidebar-section">
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                        <span className="sidebar-section-title" style={{ margin: 0 }}>Repositories</span>
-                        <button className="btn btn-primary btn-sm" onClick={() => setShowUpload(true)}>
-                            + Add
-                        </button>
-                    </div>
-                    <ul className="sidebar-list">
-                        {repos.map((repo) => (
-                            <li
-                                key={repo.id}
-                                className={`sidebar-item ${activeRepo?.id === repo.id ? "active" : ""}`}
-                                onClick={() => setActiveRepo(repo)}
-                            >
-                                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
-                                    {repo.name}
-                                </span>
-                                <span className={`status-badge ${repo.status}`}>
-                                    {repo.status}
-                                </span>
-                            </li>
-                        ))}
-                        {repos.length === 0 && (
-                            <li className="sidebar-item" style={{ color: "var(--text-muted)", cursor: "default" }}>
-                                No repositories yet
-                            </li>
-                        )}
-                    </ul>
-                </div>
-
-                {activeRepo?.status === "ready" && (
-                    <>
-                        <div className="sidebar-section">
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                                <span className="sidebar-section-title" style={{ margin: 0 }}>Conversations</span>
-                                <button className="btn btn-secondary btn-sm" onClick={startNewConversation}>
-                                    New
-                                </button>
-                            </div>
-                            <ul className="sidebar-list">
-                                {conversations.map((conv) => (
-                                    <li
-                                        key={conv.id}
-                                        className={`sidebar-item ${activeConvId === conv.id ? "active" : ""}`}
-                                        onClick={() => loadConversationHistory(conv.id)}
-                                    >
-                                        {conv.title.slice(0, 40)}
-                                    </li>
-                                ))}
-                            </ul>
+                {/* Repos & Files Tray Section */}
+                <div style={{ display: activeTray === "repos" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
+                    <div className="sidebar-section">
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                            <span className="sidebar-section-title" style={{ margin: 0 }}>Repositories</span>
+                            <button className="btn btn-primary btn-sm" onClick={() => setShowUpload(true)}>
+                                + Add
+                            </button>
                         </div>
+                        <ul className="sidebar-list" style={{ maxHeight: "20vh", overflowY: "auto", scrollbarWidth: "none" }}>
+                            {repos.map((repo) => (
+                                <li
+                                    key={repo.id}
+                                    className={`sidebar-item ${activeRepo?.id === repo.id ? "active" : ""}`}
+                                    onClick={() => setActiveRepo(repo)}
+                                >
+                                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
+                                        {repo.name}
+                                    </span>
+                                    <span className={`status-badge ${repo.status}`}>
+                                        {repo.status}
+                                    </span>
+                                </li>
+                            ))}
+                            {repos.length === 0 && (
+                                <li className="sidebar-item" style={{ color: "var(--text-muted)", cursor: "default" }}>
+                                    No repositories yet
+                                </li>
+                            )}
+                        </ul>
+                    </div>
 
-                        <div className="sidebar-section sidebar-scroll">
+                    {activeRepo?.status === "ready" && (
+                        <div className="sidebar-section sidebar-scroll" style={{ display: "flex", flexDirection: "column", flex: 1 }}>
                             <span className="sidebar-section-title">Files</span>
-                            <div className="file-tree">
-                                {files.map((f) => (
-                                    <div key={f.path} className="file-node">
-                                        <span className="file-node-icon">
-                                            {f.type === "directory" ? "📁" : "📄"}
-                                        </span>
-                                        {f.name}
+                            <div className="file-tree" style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
+                                {files.length > 0 ? (
+                                    <FileTreeNode 
+                                        nodes={files} 
+                                        expandedDirs={expandedDirs}
+                                        fileContents={fileContents}
+                                        onToggleDir={toggleDirectory}
+                                        onOpenFile={openFile}
+                                        depth={0}
+                                    />
+                                ) : (
+                                    <div style={{ padding: "12px", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
+                                        Files unavailable — the repository may need to be re-ingested.
                                     </div>
-                                ))}
+                                )}
                             </div>
                         </div>
-                    </>
-                )}
+                    )}
+                </div>
+
+                {/* Conversations Tray Section */}
+                <div style={{ display: activeTray === "conversations" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
+                    <div className="sidebar-section" style={{ borderBottom: "none", flex: 1, display: "flex", flexDirection: "column" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                            <span className="sidebar-section-title" style={{ margin: 0 }}>Conversations</span>
+                            <button className="btn btn-secondary btn-sm" onClick={startNewConversation}>
+                                + New
+                            </button>
+                        </div>
+                        <ul className="sidebar-list" style={{ overflowY: "auto", scrollbarWidth: "none", flex: 1 }}>
+                            {conversations.map((conv) => (
+                                <li
+                                    key={conv.id}
+                                    className={`sidebar-item ${activeConvId === conv.id ? "active" : ""}`}
+                                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                                >
+                                    {editingConvId === conv.id ? (
+                                        <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
+                                            <input
+                                                type="text"
+                                                value={editingConvTitle}
+                                                onChange={(e) => setEditingConvTitle(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter") handleRenameConversation(conv.id);
+                                                    if (e.key === "Escape") setEditingConvId(null);
+                                                }}
+                                                autoFocus
+                                                style={{
+                                                    flex: 1,
+                                                    background: "var(--bg)",
+                                                    border: "1px solid var(--accent)",
+                                                    borderRadius: 4,
+                                                    padding: "2px 6px",
+                                                    fontSize: 12,
+                                                    color: "var(--text-primary)",
+                                                }}
+                                                onClick={(e) => e.stopPropagation()}
+                                            />
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleRenameConversation(conv.id); }}
+                                                style={{ background: "transparent", border: "none", cursor: "pointer", padding: 2, color: "var(--success)" }}
+                                            >
+                                                <Check size={14} />
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setEditingConvId(null); }}
+                                                style={{ background: "transparent", border: "none", cursor: "pointer", padding: 2, color: "var(--text-muted)" }}
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <span 
+                                                onClick={() => loadConversationHistory(conv.id)}
+                                                style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer" }}
+                                            >
+                                                {conv.title.slice(0, 30)}
+                                            </span>
+                                            <div style={{ display: "flex", gap: 2, opacity: 0.5 }} className="conv-actions">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); startEditingConversation(conv); }}
+                                                    style={{ background: "transparent", border: "none", cursor: "pointer", padding: 2, color: "var(--text-muted)" }}
+                                                    title="Rename"
+                                                >
+                                                    <Edit2 size={12} />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id); }}
+                                                    style={{ background: "transparent", border: "none", cursor: "pointer", padding: 2, color: "var(--error)" }}
+                                                    title="Delete"
+                                                >
+                                                    <Trash2 size={12} />
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
             </aside>
 
             {/* ── Main Content ────────────────── */}
@@ -608,7 +845,94 @@ function DashboardContent() {
                     </div>
                 </div>
             )}
+
+            {/* ── Settings Modal ────────────────── */}
+            <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
+
+            {/* ── File Viewer ────────────────── */}
+            <FileViewer file={viewingFile} onClose={() => setViewingFile(null)} />
         </div>
+    );
+}
+
+// ── File Tree Node Component ────────────────────────────────
+
+interface FileTreeNodeProps {
+    nodes: FileNode[];
+    expandedDirs: Set<string>;
+    fileContents: Map<string, FileNode[]>;
+    onToggleDir: (path: string) => void;
+    onOpenFile: (path: string) => void;
+    depth: number;
+}
+
+function FileTreeNode({ nodes, expandedDirs, fileContents, onToggleDir, onOpenFile, depth }: FileTreeNodeProps) {
+    return (
+        <>
+            {nodes.map((node) => {
+                const isExpanded = expandedDirs.has(node.path);
+                const children = fileContents.get(node.path) || [];
+
+                return (
+                    <div key={node.path}>
+                        <div
+                            className="file-node"
+                            onClick={() => {
+                                if (node.type === "directory") {
+                                    onToggleDir(node.path);
+                                } else {
+                                    onOpenFile(node.path);
+                                }
+                            }}
+                            style={{
+                                paddingLeft: `${12 + depth * 16}px`,
+                                cursor: "pointer",
+                                position: "relative",
+                            }}
+                        >
+                            {/* Indent Guides */}
+                            {Array.from({ length: depth }).map((_, i) => (
+                                <div
+                                    key={i}
+                                    style={{
+                                        width: 1,
+                                        height: "100%",
+                                        position: "absolute",
+                                        left: 20 + i * 16,
+                                        top: 0,
+                                        background: "var(--border)",
+                                    }}
+                                />
+                            ))}
+                            {node.type === "directory" ? (
+                                <>
+                                    <span style={{ width: 16, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                                        {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                    </span>
+                                    <Folder size={14} style={{ color: "var(--accent-light)", marginRight: 6 }} />
+                                </>
+                            ) : (
+                                <>
+                                    <span style={{ width: 16 }} />
+                                    <File size={14} style={{ color: "var(--text-muted)", marginRight: 6 }} />
+                                </>
+                            )}
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{node.name}</span>
+                        </div>
+                        {node.type === "directory" && isExpanded && children.length > 0 && (
+                            <FileTreeNode
+                                nodes={children}
+                                expandedDirs={expandedDirs}
+                                fileContents={fileContents}
+                                onToggleDir={onToggleDir}
+                                onOpenFile={onOpenFile}
+                                depth={depth + 1}
+                            />
+                        )}
+                    </div>
+                );
+            })}
+        </>
     );
 }
 
@@ -642,7 +966,11 @@ function formatMarkdown(text: string): string {
     // Wrap list items
     html = html.replace(/(<li>.*?<\/li>)+/gs, "<ul>$&</ul>");
 
-    return `<p>${html}</p>`;
+    // Sanitize HTML with DOMPurify before returning
+    return DOMPurify.sanitize(`<p>${html}</p>`, {
+        ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'code', 'pre', 'h2', 'h3', 'h4', 'ul', 'li'],
+        ALLOWED_ATTR: ['class'],
+    });
 }
 
 function escapeHtml(text: string): string {
@@ -657,8 +985,10 @@ function escapeHtml(text: string): string {
 
 export default function Dashboard() {
     return (
-        <ProtectedRoute>
-            <DashboardContent />
-        </ProtectedRoute>
+        <ErrorBoundary>
+            <ProtectedRoute>
+                <DashboardContent />
+            </ProtectedRoute>
+        </ErrorBoundary>
     );
 }

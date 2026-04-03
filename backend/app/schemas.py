@@ -21,6 +21,25 @@ class LoginRequest(BaseModel):
     password: str = Field(..., min_length=1)
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=6, max_length=128)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=6, max_length=128)
+
+
+class UpdateProfileRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    email: Optional[EmailStr] = None
+
+
 class UserResponse(BaseModel):
     id: str
     email: str
@@ -112,11 +131,40 @@ class ConversationResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ConversationUpdateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=512)
+
+
 class MessageResponse(BaseModel):
     id: str
     role: str
     content: str
     metadata_json: Optional[str] = None
     created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ── File Content ────────────────────────────────────────────
+
+class FileContentResponse(BaseModel):
+    content: str
+    language: str
+
+    model_config = {"from_attributes": True}
+
+
+# ── Pagination ──────────────────────────────────────────────
+
+from typing import TypeVar, Generic
+
+T = TypeVar("T")
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: list[T]
+    total: int
+    page: int
+    per_page: int
+    has_more: bool
 
     model_config = {"from_attributes": True}

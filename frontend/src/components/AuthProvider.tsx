@@ -82,6 +82,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const logout = useCallback(() => {
         removeToken();
+        // Clear any other cached data to prevent data leaking between sessions
+        if (typeof window !== "undefined") {
+            // Remove all app-specific keys
+            const keysToRemove: string[] = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && (key.startsWith("copilot_") || key.startsWith("clarix_"))) {
+                    keysToRemove.push(key);
+                }
+            }
+            keysToRemove.forEach((k) => localStorage.removeItem(k));
+        }
         setUser(null);
         router.push("/");
     }, [router]);

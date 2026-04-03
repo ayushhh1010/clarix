@@ -3,10 +3,12 @@ Authentication routes: register, login, OAuth (GitHub / Google), user profile.
 """
 
 import logging
+import secrets
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,13 +16,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.models import User
-from app.schemas import LoginRequest, RegisterRequest, TokenResponse, UserResponse
+from app.schemas import (
+    LoginRequest,
+    RegisterRequest,
+    TokenResponse,
+    UserResponse,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+    ChangePasswordRequest,
+    UpdateProfileRequest,
+)
 from app.security import (
     create_access_token,
     get_current_user,
     hash_password,
     verify_password,
 )
+from app.rate_limit import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 logger = logging.getLogger("copilot.auth")
@@ -30,7 +42,8 @@ settings = get_settings()
 # ── Register ────────────────────────────────────────────────
 
 @router.post("/register", response_model=TokenResponse)
-async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("3/minute")
+async def register(request: Request, req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     """Create a new account with email + password."""
     # Check if email already exists
     result = await db.execute(select(User).where(User.email == req.email))
@@ -54,7 +67,8 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
 # ── Login ───────────────────────────────────────────────────
 
 @router.post("/login", response_model=TokenResponse)
-async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Authenticate with email + password."""
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
@@ -76,6 +90,119 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
 async def get_me(user: User = Depends(get_current_user)):
     """Get the currently authenticated user."""
     return UserResponse.model_validate(user)
+
+
+# ── Password Reset ──────────────────────────────────────────
+
+@router.post("/forgot-password")
+async def forgot_password(req: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Request a password reset email."""
+    result = await db.execute(select(User).where(User.email == req.email))
+    user = result.scalar_one_or_none()
+    
+    # Always return success to prevent email enumeration
+    if not user:
+        logger.info("Password reset requested for non-existent email: %s", req.email)
+        return {"message": "If the email exists, a reset link has been sent"}
+    
+    # Generate reset token
+    token = secrets.token_urlsafe(32)
+    user.password_reset_token = token
+    user.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
+    await db.flush()
+    await db.commit()
+    
+    # In production, send email. For now, log the token.
+    reset_url = f"{settings.frontend_url}/reset-password?token={token}"
+    logger.info("Password reset link for %s: %s", user.email, reset_url)
+    
+    return {"message": "If the email exists, a reset link has been sent"}
+
+
+@router.post("/reset-password")
+async def reset_password(req: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Reset password using token from email."""
+    result = await db.execute(
+        select(User).where(User.password_reset_token == req.token)
+    )
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    
+    if user.reset_token_expires and user.reset_token_expires < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Reset token has expired")
+    
+    user.hashed_password = hash_password(req.new_password)
+    user.password_reset_token = None
+    user.reset_token_expires = None
+    await db.flush()
+    await db.commit()
+    
+    logger.info("Password reset successful for: %s", user.email)
+    return {"message": "Password reset successful"}
+
+
+# ── Profile Management ──────────────────────────────────────
+
+@router.patch("/profile", response_model=UserResponse)
+async def update_profile(
+    req: UpdateProfileRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update user profile (name, email)."""
+    if req.name is not None:
+        user.name = req.name
+    
+    if req.email is not None and req.email != user.email:
+        # Check if email is taken
+        result = await db.execute(select(User).where(User.email == req.email))
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Email already in use")
+        user.email = req.email
+    
+    await db.flush()
+    await db.commit()
+    await db.refresh(user)
+    
+    logger.info("Profile updated for: %s", user.email)
+    return UserResponse.model_validate(user)
+
+
+@router.post("/change-password")
+async def change_password(
+    req: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change password (requires current password)."""
+    if not user.hashed_password:
+        raise HTTPException(status_code=400, detail="Cannot change password for OAuth-only accounts")
+    
+    if not verify_password(req.current_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    
+    user.hashed_password = hash_password(req.new_password)
+    await db.flush()
+    await db.commit()
+    
+    logger.info("Password changed for: %s", user.email)
+    return {"message": "Password changed successfully"}
+
+
+@router.delete("/account")
+async def delete_account(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete user account and all associated data."""
+    email = user.email
+    await db.delete(user)
+    await db.commit()
+    
+    logger.info("Account deleted: %s", email)
+    return {"message": "Account deleted successfully"}
 
 
 # ═════════════════════════════════════════════════════════════
