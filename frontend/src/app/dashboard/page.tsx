@@ -184,20 +184,21 @@ function DashboardContent() {
     };
 
     const pollRepoStatus = useCallback(async (repoId: string) => {
+        const MAX_POLL_DURATION_MS = 60 * 60 * 1000; // 60 minutes — large repos can take a while
         const startTime = Date.now();
-        const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
         const poll = async () => {
             try {
-                // Timeout: stop polling after 5 min
-                if (Date.now() - startTime > TIMEOUT_MS) {
+                // Timeout guard — stop polling after MAX_POLL_DURATION_MS
+                if (Date.now() - startTime > MAX_POLL_DURATION_MS) {
+                    toast.error("Ingestion timed out. Please delete and re-add the repository.");
                     setRepos((prev) =>
                         prev.map((r) =>
-                            r.id === repoId ? { ...r, status: "failed", error_message: "Ingestion timed out. Please try again." } : r
+                            r.id === repoId ? { ...r, status: "failed", error_message: "Ingestion timed out" } : r
                         )
                     );
                     setActiveRepo((prev) =>
-                        prev?.id === repoId ? { ...prev, status: "failed", error_message: "Ingestion timed out. Please try again." } : prev
+                        prev?.id === repoId ? { ...prev, status: "failed", error_message: "Ingestion timed out" } : prev
                     );
                     return;
                 }
@@ -213,12 +214,18 @@ function DashboardContent() {
                 );
 
                 if (status.status === "pending" || status.status === "ingesting") {
-                    setTimeout(poll, 3000);
+                    setTimeout(poll, 2000);
                 } else if (status.status === "ready") {
+                    toast.success("Repository indexed successfully!");
                     loadFiles(repoId);
+                } else if (status.status === "failed") {
+                    toast.error(status.error_message || "Ingestion failed. Please try again.");
                 }
+                // For any other status (or failed/ready), polling stops naturally
             } catch (err) {
                 console.error("Poll failed:", err);
+                // Don't stop polling on transient network errors — retry
+                setTimeout(poll, 3000);
             }
         };
         poll();
@@ -766,23 +773,76 @@ function DashboardContent() {
                                     </div>
                                 </div>
                             </div>
-                        ) : (
+                        ) : activeRepo.status === "failed" ? (
                             <div className="empty-state">
-                                <div className="spinner spinner-lg" />
-                                <h3>
-                                    {activeRepo.status === "pending"
-                                        ? "Queued for processing..."
-                                        : activeRepo.status === "ingesting"
-                                            ? "Ingesting codebase..."
-                                            : "Ingestion failed"}
-                                </h3>
-                                <p>
-                                    {activeRepo.status === "failed"
-                                        ? activeRepo.error_message || "An error occurred during ingestion."
-                                        : activeRepo.status === "ingesting"
-                                            ? "⚙️ Cloning → Parsing → Chunking → Embedding... This takes 1-3 minutes."
-                                            : "Queued — starting shortly..."}
-                                </p>
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--error)" strokeWidth="1.5">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <line x1="15" y1="9" x2="9" y2="15" />
+                                    <line x1="9" y1="9" x2="15" y2="15" />
+                                </svg>
+                                <h3>Ingestion Failed</h3>
+                                <p>{activeRepo.error_message || "An error occurred during ingestion."}</p>
+                            </div>
+                        ) : (
+                            <div className="ingestion-progress-container">
+                                <div className="ingestion-progress-card">
+                                    <div className="ingestion-icon-ring">
+                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="ingestion-code-icon">
+                                            <polyline points="16 18 22 12 16 6" />
+                                            <polyline points="8 6 2 12 8 18" />
+                                        </svg>
+                                    </div>
+                                    <h3 className="ingestion-title">
+                                        {activeRepo.status === "pending" ? "Preparing analysis..." : "Indexing codebase"}
+                                    </h3>
+                                    <div className="ingestion-steps">
+                                        <IngestionStep 
+                                            label="Clone" 
+                                            active={activeRepo.ingestion_phase === "clone"} 
+                                            done={["parse", "embed", "store", "done"].includes(activeRepo.ingestion_phase || "")} 
+                                        />
+                                        <div className="ingestion-step-connector" />
+                                        <IngestionStep 
+                                            label="Parse" 
+                                            active={activeRepo.ingestion_phase === "parse"} 
+                                            done={["embed", "store", "done"].includes(activeRepo.ingestion_phase || "")} 
+                                        />
+                                        <div className="ingestion-step-connector" />
+                                        <IngestionStep 
+                                            label="Embed" 
+                                            active={activeRepo.ingestion_phase === "embed"} 
+                                            done={["store", "done"].includes(activeRepo.ingestion_phase || "")} 
+                                        />
+                                        <div className="ingestion-step-connector" />
+                                        <IngestionStep 
+                                            label="Store" 
+                                            active={activeRepo.ingestion_phase === "store"} 
+                                            done={activeRepo.ingestion_phase === "done" || activeRepo.status === "ready"} 
+                                        />
+                                    </div>
+                                    {activeRepo.status === "ingesting" && (
+                                        <div className="ingestion-progress-section">
+                                            <div className="ingestion-progress-bar-track">
+                                                <div className="ingestion-progress-bar-fill" style={{ width: `${Math.max(activeRepo.ingestion_progress || 0, 2)}%` }} />
+                                                <div className="ingestion-progress-bar-glow" style={{ width: `${Math.max(activeRepo.ingestion_progress || 0, 2)}%` }} />
+                                            </div>
+                                            <div className="ingestion-stats">
+                                                <span className="ingestion-pct">{activeRepo.ingestion_progress || 0}%</span>
+                                                {(activeRepo.ingestion_total_chunks || 0) > 0 && (
+                                                    <span className="ingestion-detail">
+                                                        {activeRepo.ingestion_total_chunks?.toLocaleString()} chunks
+                                                        {(activeRepo.ingestion_cached_chunks || 0) > 0 && (
+                                                            <span className="ingestion-cache-badge">⚡ {activeRepo.ingestion_cached_chunks?.toLocaleString()} cached</span>
+                                                        )}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                    <p className="ingestion-hint">
+                                        {activeRepo.status === "pending" ? "Queued — starting shortly..." : (activeRepo.ingestion_cached_chunks || 0) > 0 ? "Using cached embeddings for unchanged code ⚡" : "Analyzing code structure and generating embeddings..."}
+                                    </p>
+                                </div>
                             </div>
                         )}
                     </>
@@ -851,6 +911,22 @@ function DashboardContent() {
 
             {/* ── File Viewer ────────────────── */}
             <FileViewer file={viewingFile} onClose={() => setViewingFile(null)} />
+        </div>
+    );
+}
+// ── Ingestion Step Indicator Component ───────────────────────
+
+function IngestionStep({ label, active, done }: { label: string; active: boolean; done: boolean }) {
+    return (
+        <div className={`ingestion-step-item ${active ? "active" : ""} ${done ? "done" : ""}`}>
+            <div className="ingestion-step-dot">
+                {done && (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                )}
+            </div>
+            <span className="ingestion-step-label">{label}</span>
         </div>
     );
 }
@@ -964,7 +1040,7 @@ function formatMarkdown(text: string): string {
         .replace(/\n/g, "<br/>");
 
     // Wrap list items
-    html = html.replace(/(<li>.*?<\/li>)+/gs, "<ul>$&</ul>");
+    html = html.replace(/(<li>[\s\S]*?<\/li>)+/g, "<ul>$&</ul>");
 
     // Sanitize HTML with DOMPurify before returning
     return DOMPurify.sanitize(`<p>${html}</p>`, {

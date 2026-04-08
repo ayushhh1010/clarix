@@ -2,6 +2,7 @@
 Ingestion pipeline orchestrator — clone → parse → chunk → embed → store.
 """
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -30,6 +31,30 @@ class IngestionResult:
         self.error: Optional[str] = None
 
 
+async def _mark_repo_failed(repo_id: str, error_msg: str) -> None:
+    """
+    Use a completely fresh DB session to mark the repo as failed.
+    This guarantees the status update is persisted even when the
+    caller's session is corrupted (e.g. overlapping commits).
+    """
+    from app.database import async_session_factory
+    from app.models import Repository
+
+    try:
+        async with async_session_factory() as fresh_db:
+            repo = await fresh_db.get(Repository, repo_id)
+            if repo:
+                repo.status = "failed"
+                repo.error_message = error_msg[:2000]
+                repo.ingestion_progress = 0
+                await fresh_db.commit()
+                logger.info("[%s] Marked repo as failed via fresh session", repo_id)
+    except Exception as mark_exc:
+        logger.error(
+            "[%s] CRITICAL: Could not mark repo as failed: %s", repo_id, mark_exc
+        )
+
+
 async def run_ingestion_pipeline(
     repo_id: str,
     url: str,
@@ -40,7 +65,7 @@ async def run_ingestion_pipeline(
     1. Clone the repository
     2. Parse all source files
     3. Chunk source files
-    4. Generate embeddings
+    4. Generate embeddings (async concurrent + cached)
     5. Store in vector database
     6. Update repository record in PostgreSQL
 
@@ -57,7 +82,18 @@ async def run_ingestion_pipeline(
         return result
 
     repo.status = "ingesting"
+    repo.ingestion_progress = 0
+    repo.ingestion_total_chunks = 0
+    repo.ingestion_cached_chunks = 0
+    repo.ingestion_phase = "clone"
     await db.commit()
+
+    # Lock to serialise progress_callback DB commits —
+    # embed_chunks fires many concurrent batches via asyncio.gather,
+    # and each one calls progress_callback. Without the lock multiple
+    # commit() calls race on the same session, causing
+    # IllegalStateChangeError.
+    _progress_lock = asyncio.Lock()
 
     try:
         # 1. Clone
@@ -68,6 +104,7 @@ async def run_ingestion_pipeline(
 
         repo.name = repo_name
         repo.local_path = local_path
+        repo.ingestion_phase = "parse"
         await db.commit()
 
         # 2. Parse
@@ -82,32 +119,67 @@ async def run_ingestion_pipeline(
         result.chunk_count = len(chunks)
         logger.info("[%s] Produced %d chunks", repo_id, result.chunk_count)
 
-        # 4. Embed
+        # Update total chunks count in DB for frontend progress display
+        repo.ingestion_total_chunks = result.chunk_count
+        repo.ingestion_phase = "embed"
+        await db.commit()
+
+        # 4. Embed (async concurrent with caching)
         logger.info("[%s] Step 4/5: Generating embeddings", repo_id)
-        embeddings = embed_chunks(chunks)
+
+        async def progress_callback(embedded_so_far: int, total: int, cache_hits: int):
+            """Update progress in DB so frontend can poll it."""
+            async with _progress_lock:
+                pct = int((embedded_so_far / total) * 100) if total > 0 else 0
+                repo.ingestion_progress = min(pct, 99)  # cap at 99 until fully stored
+                repo.ingestion_cached_chunks = cache_hits
+                await db.commit()
+
+        embeddings = await embed_chunks(
+            chunks,
+            repo_id=repo_id,
+            progress_callback=progress_callback,
+        )
 
         # 5. Store
         logger.info("[%s] Step 5/5: Storing in vector DB", repo_id)
+        repo.ingestion_phase = "store"
+        await db.commit()
+
         stored = store_chunks(repo_id, chunks, embeddings)
 
-        # Update repo record
+        # Update repo record — completed
         repo.status = "ready"
         repo.file_count = result.file_count
         repo.chunk_count = stored
+        repo.ingestion_progress = 100
+        repo.ingestion_phase = "done"
         await db.commit()
 
         result.success = True
         logger.info(
             "[%s] Ingestion complete — %d files, %d chunks",
-            repo_id, result.file_count, stored,
+            repo_id,
+            result.file_count,
+            stored,
         )
 
     except Exception as exc:
         logger.exception("[%s] Ingestion failed: %s", repo_id, exc)
         result.error = str(exc)
         result.success = False
-        repo.status = "failed"
-        repo.error_message = str(exc)[:2000]
-        await db.commit()
+
+        # Try updating status on the current session first
+        try:
+            repo.status = "failed"
+            repo.error_message = str(exc)[:2000]
+            repo.ingestion_progress = 0
+            await db.commit()
+        except Exception:
+            logger.warning(
+                "[%s] Main session commit failed, using fresh session", repo_id
+            )
+            # Session is corrupted — use a fresh one to guarantee the update
+            await _mark_repo_failed(repo_id, str(exc))
 
     return result

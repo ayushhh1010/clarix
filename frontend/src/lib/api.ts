@@ -18,6 +18,10 @@ export interface RepoResponse {
     status: string;
     file_count: number;
     chunk_count: number;
+    ingestion_progress: number;
+    ingestion_total_chunks: number;
+    ingestion_cached_chunks: number;
+    ingestion_phase?: string;  // clone, parse, embed, store, done
     error_message: string | null;
     created_at: string;
     updated_at: string;

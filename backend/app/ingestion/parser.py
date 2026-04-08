@@ -47,7 +47,28 @@ SKIP_DIRS: set[str] = {
     "vendor", "target", "bin", "obj", "out",
     "public", "static", "assets", "images", "fonts",
     "migrations", ".github",
+    # Test directories — low value for code understanding RAG
+    "test", "tests", "__tests__", "spec", "specs",
+    "e2e", "testdata", "test-fixtures", "testresources",
+    "fixtures", "mocks", "mock", "__mocks__",
+    # Generated / docs / samples
+    "generated", "docs", "doc", "samples", "examples",
 }
+
+# ── Skip these test file name patterns ───────────────────
+SKIP_TEST_PATTERNS: list[str] = [
+    # Java test files
+    "Test.java", "Tests.java", "IT.java", "Spec.java",
+    # Go test files
+    "_test.go",
+    # Python test files
+    "_test.py", "test_.py",  # note: test_ prefix handled below
+    # JavaScript / TypeScript test files
+    ".test.js", ".test.ts", ".test.jsx", ".test.tsx",
+    ".spec.js", ".spec.ts", ".spec.jsx", ".spec.tsx",
+    # Ruby test files
+    "_spec.rb",
+]
 
 MAX_FILE_SIZE_BYTES = 100 * 1024  # 100 KB
 MIN_LINE_COUNT = 5
@@ -91,6 +112,12 @@ def _should_skip_file(file_path: Path) -> bool:
     if name in SKIP_FILENAMES:
         return True
     if any(name.endswith(p) for p in SKIP_FILENAME_PATTERNS):
+        return True
+    # Skip test files by suffix pattern
+    if any(name.endswith(p) for p in SKIP_TEST_PATTERNS):
+        return True
+    # Skip test files by prefix (e.g., test_utils.py)
+    if name.startswith("test_") and name.endswith(".py"):
         return True
     return False
 

@@ -70,6 +70,9 @@ class RepoResponse(BaseModel):
     status: str
     file_count: int = 0
     chunk_count: int = 0
+    ingestion_progress: int = 0
+    ingestion_total_chunks: int = 0
+    ingestion_cached_chunks: int = 0
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
