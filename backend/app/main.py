@@ -107,7 +107,7 @@ app.include_router(agent_router)
 
 # ── Health Check ─────────────────────────────────────────────
 
-@app.get("/health", tags=["System"])
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["System"])
 async def health_check():
     """Basic health check endpoint."""
     return {
@@ -118,7 +118,7 @@ async def health_check():
     }
 
 
-@app.get("/", tags=["System"])
+@app.api_route("/", methods=["GET", "HEAD"], tags=["System"])
 async def root():
     """API root — redirect to docs."""
     return {

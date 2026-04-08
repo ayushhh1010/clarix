@@ -2,15 +2,16 @@
 Code chunker — splits source files into semantically meaningful chunks.
 
 Strategy:
-1. For Python / JS / TS  → attempt function / class boundary detection via regex
+1. For Python / JS / TS  → attempt function / class boundary detection via indentation
 2. Fallback              → sliding window of N lines with M line overlap
 3. Each chunk carries rich metadata for downstream retrieval.
+
+Note: We use line-by-line parsing instead of regex to avoid catastrophic backtracking.
 """
 
 import hashlib
 import logging
-import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from app.config import get_settings
@@ -48,68 +49,149 @@ class CodeChunk:
         }
 
 
-# ── Regex patterns for function / class detection ──────────────────
-
-_PATTERNS: dict[str, list[re.Pattern]] = {
-    "python": [
-        re.compile(r"^(class\s+(\w+)[\s\S]*?)(?=\nclass\s|\ndef\s(?!\s)|\Z)", re.MULTILINE),
-        re.compile(r"^((?:async\s+)?def\s+(\w+)[\s\S]*?)(?=\n(?:async\s+)?def\s|\nclass\s|\Z)", re.MULTILINE),
-    ],
-    "javascript": [
-        re.compile(r"^((?:export\s+)?(?:async\s+)?function\s+(\w+)[\s\S]*?)(?=\n(?:export\s+)?(?:async\s+)?function\s|\Z)", re.MULTILINE),
-        re.compile(r"^((?:export\s+)?class\s+(\w+)[\s\S]*?)(?=\nclass\s|\nfunction\s|\Z)", re.MULTILINE),
-    ],
-    "typescript": [
-        re.compile(r"^((?:export\s+)?(?:async\s+)?function\s+(\w+)[\s\S]*?)(?=\n(?:export\s+)?(?:async\s+)?function\s|\Z)", re.MULTILINE),
-        re.compile(r"^((?:export\s+)?class\s+(\w+)[\s\S]*?)(?=\nclass\s|\nfunction\s|\Z)", re.MULTILINE),
-    ],
-}
-
-
 def _make_chunk_id(repo_id: str, file_path: str, start_line: int) -> str:
     raw = f"{repo_id}:{file_path}:{start_line}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
+def _get_indent_level(line: str) -> int:
+    """Return the number of leading spaces (tabs count as 4 spaces)."""
+    count = 0
+    for ch in line:
+        if ch == " ":
+            count += 1
+        elif ch == "\t":
+            count += 4
+        else:
+            break
+    return count
+
+
+def _is_definition_start(line: str, language: str) -> tuple[bool, str, Optional[str]]:
+    """
+    Check if line starts a function or class definition.
+    Returns (is_definition, type, name).
+    """
+    stripped = line.lstrip()
+
+    if language == "python":
+        if stripped.startswith("class "):
+            # Extract class name: "class Foo:" or "class Foo(Bar):"
+            rest = stripped[6:].split("(")[0].split(":")[0].strip()
+            return True, "class", rest if rest else None
+        if stripped.startswith("def ") or stripped.startswith("async def "):
+            # Extract function name
+            if stripped.startswith("async def "):
+                rest = stripped[10:]
+            else:
+                rest = stripped[4:]
+            name = rest.split("(")[0].strip()
+            return True, "function", name if name else None
+
+    elif language in ("javascript", "typescript"):
+        # function foo() or async function foo()
+        if stripped.startswith("function ") or stripped.startswith("async function "):
+            if stripped.startswith("async function "):
+                rest = stripped[15:]
+            else:
+                rest = stripped[9:]
+            name = rest.split("(")[0].strip()
+            return True, "function", name if name else None
+        # export function foo() or export async function foo()
+        if stripped.startswith("export "):
+            rest = stripped[7:].lstrip()
+            if rest.startswith("function ") or rest.startswith("async function "):
+                if rest.startswith("async function "):
+                    rest = rest[15:]
+                else:
+                    rest = rest[9:]
+                name = rest.split("(")[0].strip()
+                return True, "function", name if name else None
+            if rest.startswith("class "):
+                name = rest[6:].split("{")[0].split("(")[0].split(" ")[0].strip()
+                return True, "class", name if name else None
+        # class Foo { or class Foo extends Bar {
+        if stripped.startswith("class "):
+            name = stripped[6:].split("{")[0].split("(")[0].split(" ")[0].strip()
+            return True, "class", name if name else None
+
+    return False, "", None
+
+
 def _chunk_by_structure(parsed: ParsedFile, repo_id: str) -> list[CodeChunk]:
-    """Attempt to split by function / class boundaries."""
-    patterns = _PATTERNS.get(parsed.language, [])
-    if not patterns:
+    """
+    Split by function/class boundaries using line-by-line parsing.
+    Much faster than regex for large files.
+    """
+    if parsed.language not in ("python", "javascript", "typescript"):
         return []
 
+    lines = parsed.content.split("\n")
     chunks: list[CodeChunk] = []
-    found_spans: list[tuple[int, int]] = []
 
-    for pattern in patterns:
-        for match in pattern.finditer(parsed.content):
-            body = match.group(1)
-            name = match.group(2) if match.lastindex and match.lastindex >= 2 else None
-            start_offset = match.start()
-            start_line = parsed.content[:start_offset].count("\n") + 1
-            end_line = start_line + body.count("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        is_def, def_type, name = _is_definition_start(line, parsed.language)
 
-            # Avoid overlapping matches
-            overlap = False
-            for s, e in found_spans:
-                if not (end_line < s or start_line > e):
-                    overlap = True
-                    break
-            if overlap:
-                continue
+        if is_def:
+            start_line = i + 1  # 1-indexed
+            base_indent = _get_indent_level(line)
 
-            found_spans.append((start_line, end_line))
-            chunk_type = "class" if (name and body.lstrip().startswith("class")) else "function"
-            chunks.append(CodeChunk(
-                chunk_id=_make_chunk_id(repo_id, parsed.relative_path, start_line),
-                repo_id=repo_id,
-                file_path=parsed.relative_path,
-                language=parsed.language,
-                content=body.strip(),
-                start_line=start_line,
-                end_line=end_line,
-                chunk_type=chunk_type,
-                name=name,
-            ))
+            # Find the end of this definition
+            j = i + 1
+            while j < len(lines):
+                next_line = lines[j]
+                # Skip empty lines and comments
+                stripped = next_line.strip()
+                if (
+                    not stripped
+                    or stripped.startswith("#")
+                    or stripped.startswith("//")
+                ):
+                    j += 1
+                    continue
+
+                next_indent = _get_indent_level(next_line)
+
+                # For Python: end when we hit same or lower indent level with content
+                if parsed.language == "python":
+                    if next_indent <= base_indent:
+                        break
+                # For JS/TS: we need to track braces or use heuristics
+                else:
+                    # Simple heuristic: same indent with a new definition
+                    if next_indent <= base_indent:
+                        is_new_def, _, _ = _is_definition_start(
+                            next_line, parsed.language
+                        )
+                        if is_new_def:
+                            break
+                j += 1
+
+            end_line = j  # exclusive, but we want inclusive
+            content = "\n".join(lines[i:j]).strip()
+
+            if content:
+                chunks.append(
+                    CodeChunk(
+                        chunk_id=_make_chunk_id(
+                            repo_id, parsed.relative_path, start_line
+                        ),
+                        repo_id=repo_id,
+                        file_path=parsed.relative_path,
+                        language=parsed.language,
+                        content=content,
+                        start_line=start_line,
+                        end_line=end_line,
+                        chunk_type=def_type,
+                        name=name,
+                    )
+                )
+
+            i = j
+        else:
+            i += 1
 
     return chunks
 
@@ -129,17 +211,19 @@ def _chunk_by_sliding_window(parsed: ParsedFile, repo_id: str) -> list[CodeChunk
         content = "\n".join(chunk_lines).strip()
         if not content:
             continue
-        chunks.append(CodeChunk(
-            chunk_id=_make_chunk_id(repo_id, parsed.relative_path, start + 1),
-            repo_id=repo_id,
-            file_path=parsed.relative_path,
-            language=parsed.language,
-            content=content,
-            start_line=start + 1,
-            end_line=end,
-            chunk_type="block",
-            name=None,
-        ))
+        chunks.append(
+            CodeChunk(
+                chunk_id=_make_chunk_id(repo_id, parsed.relative_path, start + 1),
+                repo_id=repo_id,
+                file_path=parsed.relative_path,
+                language=parsed.language,
+                content=content,
+                start_line=start + 1,
+                end_line=end,
+                chunk_type="block",
+                name=None,
+            )
+        )
         if end >= total:
             break
 
@@ -154,7 +238,9 @@ def chunk_file(parsed: ParsedFile, repo_id: str) -> list[CodeChunk]:
     # Try structural chunking first
     structural = _chunk_by_structure(parsed, repo_id)
     if structural:
-        logger.debug("Structural chunking: %s → %d chunks", parsed.relative_path, len(structural))
+        logger.debug(
+            "Structural chunking: %s → %d chunks", parsed.relative_path, len(structural)
+        )
         return structural
 
     # Fallback to sliding window

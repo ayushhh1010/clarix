@@ -51,6 +51,7 @@ async def init_db() -> None:
     """Create all tables on startup and run lightweight migrations."""
     async with engine.begin() as conn:
         from app import models  # noqa: F401 — ensure models are imported
+
         await conn.run_sync(Base.metadata.create_all)
 
     # ── Lightweight migrations (add columns if missing) ──────
@@ -98,13 +99,45 @@ async def init_db() -> None:
         # Create indexes if missing
         try:
             await conn.execute(
-                text("CREATE INDEX IF NOT EXISTS ix_repositories_user_id ON repositories(user_id)")
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_repositories_user_id ON repositories(user_id)"
+                )
             )
             await conn.execute(
-                text("CREATE INDEX IF NOT EXISTS ix_conversations_user_id ON conversations(user_id)")
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_conversations_user_id ON conversations(user_id)"
+                )
             )
         except Exception:
             pass
+
+        # Add ingestion progress columns to repositories
+        for col_name in (
+            "ingestion_progress",
+            "ingestion_total_chunks",
+            "ingestion_cached_chunks",
+        ):
+            try:
+                await conn.execute(
+                    text(
+                        f"ALTER TABLE repositories ADD COLUMN IF NOT EXISTS "
+                        f"{col_name} INTEGER DEFAULT 0"
+                    )
+                )
+            except Exception:
+                pass
+
+        # Add ingestion_phase column
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE repositories ADD COLUMN IF NOT EXISTS "
+                    "ingestion_phase VARCHAR(20) DEFAULT 'clone'"
+                )
+            )
+        except Exception:
+            pass
+
 
 async def close_db() -> None:
     """Dispose the connection pool on shutdown."""
