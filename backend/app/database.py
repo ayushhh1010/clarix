@@ -14,8 +14,15 @@ from app.config import get_settings
 
 settings = get_settings()
 
+# Ensure we use asyncpg driver even if Railway/PaaS injects standard postgres:// url
+db_url = settings.database_url
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif db_url.startswith("postgresql://"):
+    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
 engine = create_async_engine(
-    settings.database_url,
+    db_url,
     echo=settings.app_env == "development",
     pool_size=20,
     max_overflow=10,
