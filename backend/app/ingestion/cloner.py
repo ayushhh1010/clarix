@@ -8,7 +8,6 @@ import shutil
 from pathlib import Path
 from urllib.parse import urlparse
 
-from git import Repo, GitCommandError
 
 from app.config import get_settings
 
@@ -54,6 +53,19 @@ def clone_repo(url: str, repo_id: str) -> tuple[str, str]:
 
     # Inject token for authenticated cloning in production
     auth_url = _inject_token(url)
+
+    import git as _git  # deferred: git must be available when cloning
+    from git import Repo, GitCommandError
+
+    # Explicitly locate the git binary — Render and some containers have git
+    # installed but not always on the PATH that Python's subprocess sees.
+    git_bin = shutil.which("git") or shutil.which("git.exe")
+    if git_bin:
+        _git.refresh(git_bin)
+    else:
+        raise RuntimeError(
+            "git executable not found. Install git or set GIT_PYTHON_GIT_EXECUTABLE."
+        )
 
     logger.info("Cloning %s → %s", url, dest_str)  # log original URL, not token URL
     try:

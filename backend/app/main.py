@@ -4,6 +4,13 @@ Production-grade setup with CORS, lifespan events, structured logging,
 rate limiting, and health checks.
 """
 
+# Must happen before ANY import that transitively pulls in gitpython.
+# Render's runtime has git installed but it may not be on the PATH that
+# Python resolves at import time. This silences the module-level check;
+# the actual git binary is located explicitly inside clone_repo().
+import os
+os.environ.setdefault("GIT_PYTHON_REFRESH", "quiet")
+
 import logging
 import sys
 from contextlib import asynccontextmanager
