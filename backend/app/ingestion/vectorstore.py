@@ -7,6 +7,7 @@ from typing import Optional, Sequence
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
+from chromadb.errors import InvalidCollectionException
 
 from app.config import get_settings
 from app.ingestion.chunker import CodeChunk
@@ -100,7 +101,7 @@ def search(
 
     try:
         collection = client.get_collection(col_name)
-    except ValueError:
+    except (ValueError, InvalidCollectionException):
         logger.warning("Collection %s not found", col_name)
         return []
 
@@ -137,5 +138,5 @@ def delete_collection(repo_id: str) -> None:
     try:
         client.delete_collection(col_name)
         logger.info("Deleted collection %s", col_name)
-    except ValueError:
+    except (ValueError, InvalidCollectionException):
         logger.warning("Collection %s not found for deletion", col_name)

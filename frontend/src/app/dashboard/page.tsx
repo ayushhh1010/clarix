@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import DOMPurify from "dompurify";
 import { toast, Toaster } from "sonner";
-import { Settings, Trash2, Edit2, ChevronRight, ChevronDown, File, Folder, MoreVertical, Check, X, MessageSquare, LogOut, User } from "lucide-react";
+import { Settings, Trash2, Edit2, ChevronRight, ChevronDown, File, Folder, FolderTree, MoreVertical, Check, X, MessageSquare, LogOut, User } from "lucide-react";
 import {
     listRepos,
     uploadRepo,
@@ -47,7 +47,9 @@ function DashboardContent() {
     const [files, setFiles] = useState<FileNode[]>([]);
     const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
     const [fileContents, setFileContents] = useState<Map<string, FileNode[]>>(new Map());
-    const [conversations, setConversations] = useState<ConversationResponse[]>([]);
+    // Per-repo conversations map & which repos are expanded in the sidebar
+    const [repoConversations, setRepoConversations] = useState<Map<string, ConversationResponse[]>>(new Map());
+    const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
     const [activeConvId, setActiveConvId] = useState<string | undefined>();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState("");
@@ -64,7 +66,7 @@ function DashboardContent() {
     // Settings modal
     const [showSettings, setShowSettings] = useState(false);
     const [showSettingsMenu, setShowSettingsMenu] = useState(false);
-    const [activeTray, setActiveTray] = useState<"repos" | "conversations" | null>("repos");
+    const [activeTray, setActiveTray] = useState<"repos" | "files" | null>("repos");
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -96,7 +98,7 @@ function DashboardContent() {
         // Reset all state on user change for clean isolation
         setActiveRepo(null);
         setFiles([]);
-        setConversations([]);
+        setRepoConversations(new Map());
         setMessages([]);
         setActiveConvId(undefined);
         if (user) {
@@ -106,11 +108,18 @@ function DashboardContent() {
         }
     }, [user?.id]);
 
+    // Persist active repo ID to localStorage
+    useEffect(() => {
+        if (activeRepo) {
+            localStorage.setItem("clarix_active_repo_id", activeRepo.id);
+        }
+    }, [activeRepo?.id]);
+
     // Load files and conversations when active repo changes
     useEffect(() => {
         if (activeRepo?.status === "ready") {
             loadFiles(activeRepo.id);
-            loadConversations(activeRepo.id);
+            loadConversationsForRepo(activeRepo.id);
         }
     }, [activeRepo?.id, activeRepo?.status]);
 
@@ -120,6 +129,15 @@ function DashboardContent() {
         try {
             const data = await listRepos();
             setRepos(data.items);
+            // Restore previously selected repo from localStorage
+            const savedRepoId = localStorage.getItem("clarix_active_repo_id");
+            if (savedRepoId && data.items.length > 0) {
+                const savedRepo = data.items.find((r: RepoResponse) => r.id === savedRepoId);
+                if (savedRepo) {
+                    setActiveRepo(savedRepo);
+                    setExpandedRepos(prev => new Set(prev).add(savedRepo.id));
+                }
+            }
         } catch (err) {
             console.error("Failed to load repos:", err);
         }
@@ -135,10 +153,10 @@ function DashboardContent() {
         }
     };
 
-    const loadConversations = async (repoId: string) => {
+    const loadConversationsForRepo = async (repoId: string) => {
         try {
             const data = await listConversations(repoId);
-            setConversations(data.items);
+            setRepoConversations(prev => new Map(prev).set(repoId, data.items));
         } catch (err) {
             console.error("Failed to load conversations:", err);
         }
@@ -298,7 +316,7 @@ function DashboardContent() {
             },
             () => {
                 setIsLoading(false);
-                if (activeRepo) loadConversations(activeRepo.id);
+                if (activeRepo) loadConversationsForRepo(activeRepo.id);
             },
             (err: Error) => {
                 console.error("Stream error:", err);
@@ -330,8 +348,9 @@ function DashboardContent() {
                 setActiveRepo(null);
                 setMessages([]);
                 setFiles([]);
-                setConversations([]);
+                localStorage.removeItem("clarix_active_repo_id");
             }
+            setRepoConversations(prev => { const next = new Map(prev); next.delete(repoId); return next; });
             toast.success("Repository deleted");
         } catch (err) {
             console.error("Delete failed:", err);
@@ -342,6 +361,20 @@ function DashboardContent() {
     const startNewConversation = () => {
         setActiveConvId(undefined);
         setMessages([]);
+    };
+
+    // Toggle repo expansion in sidebar (loads conversations on first expand)
+    const toggleRepoExpanded = async (repo: RepoResponse) => {
+        const repoId = repo.id;
+        if (expandedRepos.has(repoId)) {
+            setExpandedRepos(prev => { const next = new Set(prev); next.delete(repoId); return next; });
+        } else {
+            setExpandedRepos(prev => new Set(prev).add(repoId));
+            // Load conversations for this repo if not already loaded
+            if (!repoConversations.has(repoId) && repo.status === "ready") {
+                loadConversationsForRepo(repoId);
+            }
+        }
     };
 
     // ── File Explorer Functions ─────────────────────────────
@@ -384,11 +417,16 @@ function DashboardContent() {
 
     // ── Conversation Management Functions ───────────────────
 
-    const handleDeleteConversation = async (convId: string) => {
+    const handleDeleteConversation = async (convId: string, repoId: string) => {
         if (!confirm("Delete this conversation?")) return;
         try {
             await deleteConversation(convId);
-            setConversations(prev => prev.filter(c => c.id !== convId));
+            setRepoConversations(prev => {
+                const next = new Map(prev);
+                const existing = next.get(repoId) || [];
+                next.set(repoId, existing.filter(c => c.id !== convId));
+                return next;
+            });
             if (activeConvId === convId) {
                 setActiveConvId(undefined);
                 setMessages([]);
@@ -400,13 +438,16 @@ function DashboardContent() {
         }
     };
 
-    const handleRenameConversation = async (convId: string) => {
+    const handleRenameConversation = async (convId: string, repoId: string) => {
         if (!editingConvTitle.trim()) return;
         try {
             await renameConversation(convId, editingConvTitle.trim());
-            setConversations(prev => 
-                prev.map(c => c.id === convId ? { ...c, title: editingConvTitle.trim() } : c)
-            );
+            setRepoConversations(prev => {
+                const next = new Map(prev);
+                const existing = next.get(repoId) || [];
+                next.set(repoId, existing.map(c => c.id === convId ? { ...c, title: editingConvTitle.trim() } : c));
+                return next;
+            });
             setEditingConvId(null);
             setEditingConvTitle("");
             toast.success("Conversation renamed");
@@ -435,17 +476,15 @@ function DashboardContent() {
                         onClick={() => setActiveTray(activeTray === "repos" ? null : "repos")}
                         data-tooltip="Repositories"
                     >
-                        <Folder size={22} strokeWidth={1.5} />
+                        <MessageSquare size={22} strokeWidth={1.5} />
                     </button>
-                    {activeRepo?.status === "ready" && (
-                        <button 
-                            className={`activity-icon ${activeTray === "conversations" ? "active" : ""}`}
-                            onClick={() => setActiveTray(activeTray === "conversations" ? null : "conversations")}
-                            data-tooltip="Conversations"
-                        >
-                            <MessageSquare size={22} strokeWidth={1.5} />
-                        </button>
-                    )}
+                    <button 
+                        className={`activity-icon ${activeTray === "files" ? "active" : ""}`}
+                        onClick={() => setActiveTray(activeTray === "files" ? null : "files")}
+                        data-tooltip="File Explorer"
+                    >
+                        <FolderTree size={22} strokeWidth={1.5} />
+                    </button>
                 </div>
 
                 <div className="activity-bar-actions">
@@ -486,7 +525,7 @@ function DashboardContent() {
                 </div>
             </nav>
 
-            {/* ── Collapsible Tray ─────────────── */}
+            {/* ── Sidebar ─────────────── */}
             <aside className={`collapsible-sidebar ${activeTray ? "open" : ""}`}>
                 <div className="sidebar-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -496,32 +535,133 @@ function DashboardContent() {
                         </svg>
                         <h1>Clarix</h1>
                     </div>
+                    {activeTray === "repos" && (
+                        <button className="btn btn-primary btn-sm" onClick={() => setShowUpload(true)}>+ Add</button>
+                    )}
                 </div>
 
-                {/* Repos & Files Tray Section */}
-                <div style={{ display: activeTray === "repos" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
-                    <div className="sidebar-section">
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                            <span className="sidebar-section-title" style={{ margin: 0 }}>Repositories</span>
-                            <button className="btn btn-primary btn-sm" onClick={() => setShowUpload(true)}>
-                                + Add
-                            </button>
-                        </div>
-                        <ul className="sidebar-list" style={{ maxHeight: "20vh", overflowY: "auto", scrollbarWidth: "none" }}>
-                            {repos.map((repo) => (
-                                <li
-                                    key={repo.id}
-                                    className={`sidebar-item ${activeRepo?.id === repo.id ? "active" : ""}`}
-                                    onClick={() => setActiveRepo(repo)}
-                                >
-                                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
-                                        {repo.name}
-                                    </span>
-                                    <span className={`status-badge ${repo.status}`}>
-                                        {repo.status}
-                                    </span>
-                                </li>
-                            ))}
+                {/* ── Repos + Conversations Tray ── */}
+                <div style={{ display: activeTray === "repos" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflowY: "auto", scrollbarWidth: "none" }}>
+                    <div className="sidebar-section" style={{ borderBottom: "none" }}>
+                        <span className="sidebar-section-title" style={{ marginBottom: 8 }}>Repositories</span>
+                        <ul className="sidebar-list">
+                            {repos.map((repo) => {
+                                const isExpanded = expandedRepos.has(repo.id);
+                                const isActive = activeRepo?.id === repo.id;
+                                const convos = repoConversations.get(repo.id) || [];
+                                const handleSelectRepo = () => {
+                                    setActiveRepo(repo);
+                                    toggleRepoExpanded(repo);
+                                };
+                                return (
+                                    <li key={repo.id} style={{ marginBottom: 2 }}>
+                                        <div
+                                            className={`sidebar-item ${isActive ? "active" : ""}`}
+                                            style={{ display: "flex", alignItems: "center", gap: 6 }}
+                                            onClick={handleSelectRepo}
+                                        >
+                                            <span style={{ display: "inline-flex", alignItems: "center" }}>
+                                                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                            </span>
+                                            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
+                                                {repo.name}
+                                            </span>
+                                            <span className={`status-badge ${repo.status}`}>
+                                                {repo.status}
+                                            </span>
+                                        </div>
+                                        {/* Expanded: show conversations for this repo */}
+                                        {isExpanded && repo.status === "ready" && (
+                                            <div style={{ paddingLeft: 20, borderLeft: "1px solid var(--border)", marginLeft: 10, marginTop: 2 }}>
+                                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 4px 4px 0" }}>
+                                                    <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Chats</span>
+                                                    <button
+                                                        className="btn btn-secondary btn-sm"
+                                                        style={{ fontSize: 10, padding: "1px 6px" }}
+                                                        onClick={(e) => { e.stopPropagation(); setActiveRepo(repo); startNewConversation(); }}
+                                                    >
+                                                        + New
+                                                    </button>
+                                                </div>
+                                                {convos.length === 0 ? (
+                                                    <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>No conversations yet</div>
+                                                ) : (
+                                                    convos.map((conv) => (
+                                                        <div
+                                                            key={conv.id}
+                                                            className={`sidebar-item ${activeConvId === conv.id ? "active" : ""}`}
+                                                            style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "4px 6px" }}
+                                                        >
+                                                            {editingConvId === conv.id ? (
+                                                                <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={editingConvTitle}
+                                                                        onChange={(e) => setEditingConvTitle(e.target.value)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === "Enter") handleRenameConversation(conv.id, repo.id);
+                                                                            if (e.key === "Escape") setEditingConvId(null);
+                                                                        }}
+                                                                        autoFocus
+                                                                        style={{
+                                                                            flex: 1,
+                                                                            background: "var(--bg)",
+                                                                            border: "1px solid var(--accent)",
+                                                                            borderRadius: 4,
+                                                                            padding: "2px 6px",
+                                                                            fontSize: 11,
+                                                                            color: "var(--text-primary)",
+                                                                        }}
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                    />
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); handleRenameConversation(conv.id, repo.id); }}
+                                                                        style={{ background: "transparent", border: "none", cursor: "pointer", padding: 2, color: "var(--success)" }}
+                                                                    >
+                                                                        <Check size={12} />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); setEditingConvId(null); }}
+                                                                        style={{ background: "transparent", border: "none", cursor: "pointer", padding: 2, color: "var(--text-muted)" }}
+                                                                    >
+                                                                        <X size={12} />
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <MessageSquare size={12} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+                                                                    <span
+                                                                        onClick={() => { setActiveRepo(repo); loadConversationHistory(conv.id); }}
+                                                                        style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}
+                                                                    >
+                                                                        {conv.title.slice(0, 30)}
+                                                                    </span>
+                                                                    <div style={{ display: "flex", gap: 2, opacity: 0.5 }} className="conv-actions">
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); startEditingConversation(conv); }}
+                                                                            style={{ background: "transparent", border: "none", cursor: "pointer", padding: 2, color: "var(--text-muted)" }}
+                                                                            title="Rename"
+                                                                        >
+                                                                            <Edit2 size={10} />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id, repo.id); }}
+                                                                            style={{ background: "transparent", border: "none", cursor: "pointer", padding: 2, color: "var(--error)" }}
+                                                                            title="Delete"
+                                                                        >
+                                                                            <Trash2 size={10} />
+                                                                        </button>
+                                                                    </div>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+                                        )}
+                                    </li>
+                                );
+                            })}
                             {repos.length === 0 && (
                                 <li className="sidebar-item" style={{ color: "var(--text-muted)", cursor: "default" }}>
                                     No repositories yet
@@ -529,10 +669,13 @@ function DashboardContent() {
                             )}
                         </ul>
                     </div>
+                </div>
 
-                    {activeRepo?.status === "ready" && (
+                {/* ── File Explorer Tray ── */}
+                <div style={{ display: activeTray === "files" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
+                    {activeRepo?.status === "ready" ? (
                         <div className="sidebar-section sidebar-scroll" style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-                            <span className="sidebar-section-title">Files</span>
+                            <span className="sidebar-section-title">Files — {activeRepo.name}</span>
                             <div className="file-tree" style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
                                 {files.length > 0 ? (
                                     <FileTreeNode 
@@ -550,90 +693,11 @@ function DashboardContent() {
                                 )}
                             </div>
                         </div>
-                    )}
-                </div>
-
-                {/* Conversations Tray Section */}
-                <div style={{ display: activeTray === "conversations" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
-                    <div className="sidebar-section" style={{ borderBottom: "none", flex: 1, display: "flex", flexDirection: "column" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                            <span className="sidebar-section-title" style={{ margin: 0 }}>Conversations</span>
-                            <button className="btn btn-secondary btn-sm" onClick={startNewConversation}>
-                                + New
-                            </button>
+                    ) : (
+                        <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
+                            {activeRepo ? `Repository is ${activeRepo.status}...` : "Select a repository to browse files."}
                         </div>
-                        <ul className="sidebar-list" style={{ overflowY: "auto", scrollbarWidth: "none", flex: 1 }}>
-                            {conversations.map((conv) => (
-                                <li
-                                    key={conv.id}
-                                    className={`sidebar-item ${activeConvId === conv.id ? "active" : ""}`}
-                                    style={{ display: "flex", alignItems: "center", gap: 8 }}
-                                >
-                                    {editingConvId === conv.id ? (
-                                        <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
-                                            <input
-                                                type="text"
-                                                value={editingConvTitle}
-                                                onChange={(e) => setEditingConvTitle(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === "Enter") handleRenameConversation(conv.id);
-                                                    if (e.key === "Escape") setEditingConvId(null);
-                                                }}
-                                                autoFocus
-                                                style={{
-                                                    flex: 1,
-                                                    background: "var(--bg)",
-                                                    border: "1px solid var(--accent)",
-                                                    borderRadius: 4,
-                                                    padding: "2px 6px",
-                                                    fontSize: 12,
-                                                    color: "var(--text-primary)",
-                                                }}
-                                                onClick={(e) => e.stopPropagation()}
-                                            />
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); handleRenameConversation(conv.id); }}
-                                                style={{ background: "transparent", border: "none", cursor: "pointer", padding: 2, color: "var(--success)" }}
-                                            >
-                                                <Check size={14} />
-                                            </button>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); setEditingConvId(null); }}
-                                                style={{ background: "transparent", border: "none", cursor: "pointer", padding: 2, color: "var(--text-muted)" }}
-                                            >
-                                                <X size={14} />
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <span 
-                                                onClick={() => loadConversationHistory(conv.id)}
-                                                style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer" }}
-                                            >
-                                                {conv.title.slice(0, 30)}
-                                            </span>
-                                            <div style={{ display: "flex", gap: 2, opacity: 0.5 }} className="conv-actions">
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); startEditingConversation(conv); }}
-                                                    style={{ background: "transparent", border: "none", cursor: "pointer", padding: 2, color: "var(--text-muted)" }}
-                                                    title="Rename"
-                                                >
-                                                    <Edit2 size={12} />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id); }}
-                                                    style={{ background: "transparent", border: "none", cursor: "pointer", padding: 2, color: "var(--error)" }}
-                                                    title="Delete"
-                                                >
-                                                    <Trash2 size={12} />
-                                                </button>
-                                            </div>
-                                        </>
-                                    )}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
+                    )}
                 </div>
             </aside>
 
@@ -781,7 +845,52 @@ function DashboardContent() {
                                     <line x1="9" y1="9" x2="15" y2="15" />
                                 </svg>
                                 <h3>Ingestion Failed</h3>
-                                <p>{activeRepo.error_message || "An error occurred during ingestion."}</p>
+                                <p style={{ maxWidth: 480, lineHeight: 1.6 }}>
+                                    {(() => {
+                                        const raw = activeRepo.error_message || "An error occurred during ingestion.";
+                                        // Extract a short user-friendly summary from verbose error
+                                        const shortMsg = raw.length > 200 ? raw.slice(0, 200) + "…" : raw;
+                                        return shortMsg;
+                                    })()}
+                                </p>
+                                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                                    <button
+                                        className="btn btn-primary btn-sm"
+                                        onClick={async () => {
+                                            // Delete failed repo and re-add
+                                            try {
+                                                const url = activeRepo.url;
+                                                await deleteRepo(activeRepo.id);
+                                                setRepos((prev) => prev.filter((r) => r.id !== activeRepo.id));
+                                                if (url) {
+                                                    setUploadUrl(url);
+                                                    setShowUpload(true);
+                                                }
+                                                setActiveRepo(null);
+                                                toast.info("Repository removed. You can re-add it.");
+                                            } catch {
+                                                toast.error("Failed to clean up. Try deleting manually.");
+                                            }
+                                        }}
+                                    >
+                                        Retry
+                                    </button>
+                                    <button
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={() => handleDeleteRepo(activeRepo.id)}
+                                        style={{ color: "var(--error)" }}
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
+                                {activeRepo.error_message && activeRepo.error_message.length > 200 && (
+                                    <details style={{ marginTop: 12, maxWidth: 560, textAlign: "left", fontSize: 11, color: "var(--text-muted)" }}>
+                                        <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--text-secondary)" }}>Show full error</summary>
+                                        <pre style={{ marginTop: 8, padding: 12, background: "var(--surface)", borderRadius: 8, overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 200, overflowY: "auto", border: "1px solid var(--border)" }}>
+                                            {activeRepo.error_message}
+                                        </pre>
+                                    </details>
+                                )}
                             </div>
                         ) : (
                             <div className="ingestion-progress-container">
