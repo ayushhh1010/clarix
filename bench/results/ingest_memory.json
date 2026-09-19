@@ -1,0 +1,35 @@
+[
+  {
+    "chunks": 10000,
+    "baseline_mb": 19.7,
+    "chunk_text_mb": 15.0,
+    "embeddings_list_of_list_mb": 149.2,
+    "peak_v1_shape_mb": 164.2,
+    "embeddings_numpy_f32_mb": 27.0,
+    "embeddings_numpy_f16_mb": 7.3,
+    "embeddings_int8_mb": 3.7,
+    "embeddings_binary_mb": 0.5
+  },
+  {
+    "chunks": 25000,
+    "baseline_mb": 35.1,
+    "chunk_text_mb": 36.1,
+    "embeddings_list_of_list_mb": 373.1,
+    "peak_v1_shape_mb": 409.2,
+    "embeddings_numpy_f32_mb": 36.6,
+    "embeddings_numpy_f16_mb": 18.3,
+    "embeddings_int8_mb": 9.2,
+    "embeddings_binary_mb": 1.1
+  },
+  {
+    "chunks": 50000,
+    "baseline_mb": 35.6,
+    "chunk_text_mb": 72.1,
+    "embeddings_list_of_list_mb": 746.6,
+    "peak_v1_shape_mb": 818.8,
+    "embeddings_numpy_f32_mb": 73.2,
+    "embeddings_numpy_f16_mb": 36.6,
+    "embeddings_int8_mb": 18.3,
+    "embeddings_binary_mb": 2.3
+  }
+]

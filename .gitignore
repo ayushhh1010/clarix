@@ -29,3 +29,7 @@ backend/data/
 search_out.txt
 search_results.txt
 *.log
+
+# Benchmark artifacts
+bench/venvs/
+bench/corpus/
