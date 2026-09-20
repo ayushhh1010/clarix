@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    BigInteger,
     Column,
     DateTime,
     ForeignKey,
@@ -82,8 +83,31 @@ class Repository(Base):
     ingestion_cached_chunks = Column(Integer, default=0, server_default="0")
     ingestion_phase = Column(
         String(20), default="clone", server_default="clone"
-    )  # clone, parse, embed, store
+    )  # clone | index | done
     error_message = Column(Text, nullable=True)
+
+    # --- indexing provenance ---------------------------------------------
+    #
+    # Added to the table by migration 0002 and missing from this model
+    # until now. The worker reads them through raw SQL so it never
+    # noticed, but `/api/repo/{id}/status` and `/{id}/file-content` read
+    # them off the ORM object and raised AttributeError -- a 500 on every
+    # call, for every repository. The dashboard polls status while
+    # indexing, so the two endpoints a user hits most were both broken.
+    #
+    # Keep in step with alembic/versions/0002_v2_retrieval_schema.py;
+    # tests/test_models_schema.py now asserts they agree.
+    default_branch = Column(String(255), nullable=True)
+    head_commit_sha = Column(String(40), nullable=True)
+    indexed_commit_sha = Column(String(40), nullable=True)
+    index_version = Column(Integer, nullable=False, server_default="0", default=0)
+    indexed_chunk_count = Column(
+        Integer, nullable=False, server_default="0", default=0
+    )
+    indexed_token_count = Column(
+        BigInteger, nullable=False, server_default="0", default=0
+    )
+    last_indexed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at = Column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False

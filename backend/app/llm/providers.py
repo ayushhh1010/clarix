@@ -307,7 +307,7 @@ def build_providers(settings) -> list[Provider]:
     if getattr(settings, "groq_api_key", ""):
         providers.append(OpenAICompatible(
             name="groq",
-            model=getattr(settings, "llm_model", "llama-3.3-70b-versatile"),
+            model=getattr(settings, "groq_model", "openai/gpt-oss-120b"),
             base_url="https://api.groq.com/openai/v1",
             api_key=settings.groq_api_key,
             limits=GROQ_LIMITS,
