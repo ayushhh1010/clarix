@@ -1,0 +1,50 @@
+{
+  "tokenizer": "hf:jinaai/jina-embeddings-v2-base-code",
+  "corpus_files": 278,
+  "corpus_by_repo": {
+    "flask": 83,
+    "gin": 98,
+    "httpx": 60,
+    "requests": 37
+  },
+  "v1": {
+    "chunker": "v1 (indentation heuristic)",
+    "files": 278,
+    "chunks": 2258,
+    "seconds": 6.03,
+    "files_per_sec": 46.1,
+    "definition_coverage_CIRCULAR": 0.9486,
+    "signature_indexed_CIRCULAR": 1.0,
+    "decorator_preservation": 0.6838,
+    "decorated_total": 1034,
+    "method_isolation": 0.0,
+    "methods_total": 1414,
+    "tokens_p50": 137,
+    "tokens_p95": 637,
+    "tokens_max": 21238,
+    "tokens_mean": 282.1,
+    "over_encoder_window": 3,
+    "over_packing_budget": 45,
+    "over_budget_pct": 1.99
+  },
+  "v2": {
+    "chunker": "v2 (AST / tree-sitter)",
+    "files": 278,
+    "chunks": 3601,
+    "seconds": 6.01,
+    "files_per_sec": 46.3,
+    "definition_coverage_CIRCULAR": 0.9595,
+    "signature_indexed_CIRCULAR": 1.0,
+    "decorator_preservation": 1.0,
+    "decorated_total": 1034,
+    "method_isolation": 0.9095,
+    "methods_total": 1414,
+    "tokens_p50": 117,
+    "tokens_p95": 466,
+    "tokens_max": 1065,
+    "tokens_mean": 164.8,
+    "over_encoder_window": 0,
+    "over_packing_budget": 4,
+    "over_budget_pct": 0.11
+  }
+}

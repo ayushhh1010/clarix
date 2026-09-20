@@ -1,0 +1,24 @@
+# Repository-root ruff configuration.
+#
+# backend/pyproject.toml configures `app`, `alembic` and `tests`. This
+# covers everything outside that directory -- principally `bench/` -- so a
+# lint run from the repository root uses the same rule set instead of
+# falling back to ruff's defaults. Running under different rules than CI
+# is how a clean local check turns into a red pipeline.
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "S"]
+ignore = ["E501", "B008"]
+
+# bench/v1_chunker.py is a verbatim copy of the v1 chunker, kept so the
+# comparison in BENCHMARKS section 3 stays reproducible. Modernising it
+# would change the thing being measured, so it is excluded rather than
+# fixed.
+exclude = ["bench/v1_chunker.py"]
+
+[lint.per-file-ignores]
+# Benchmarks: asserts are the point; they shell out to pinned interpreters
+# by absolute path; pseudo-random is test data; SQL is built from literals.
+"bench/**" = ["S101", "S603", "S607", "S311", "S608"]

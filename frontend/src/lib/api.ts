@@ -21,7 +21,11 @@ export interface RepoResponse {
     ingestion_progress: number;
     ingestion_total_chunks: number;
     ingestion_cached_chunks: number;
-    ingestion_phase?: string;  // clone, parse, embed, store, done
+    // Present only after a /status poll is merged in: the repository
+    // endpoints themselves do not return it. Values are clone | index |
+    // done -- indexing streams, so parse/embed/store are not separate
+    // phases.
+    ingestion_phase?: string;
     error_message: string | null;
     created_at: string;
     updated_at: string;
@@ -41,14 +45,21 @@ export interface ChatResponse {
     sources: Source[];
 }
 
+// Matches app/retrieval/context.py::PackedContext.citations exactly.
+// The previous shape (language / chunk_type / name / relevance_score) was
+// left over from v1 and none of those fields are sent any more; the UI only
+// read file_path and start_line, so nothing broke visibly, but the type was
+// describing a response that no longer existed.
 export interface Source {
+    chunk_id: string;
     file_path: string;
-    language: string;
     start_line: number;
     end_line: number;
-    chunk_type: string;
-    name: string;
-    relevance_score: number;
+    symbol: string | null;
+    /** Pre-rendered "path:start-end", the form the model is told to cite. */
+    citation: string;
+    /** Which retrieval arms surfaced this chunk: dense, lexical, symbol. */
+    arms: string[];
 }
 
 export interface AgentStep {
