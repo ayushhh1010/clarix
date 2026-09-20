@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     cerebras_model: str = "llama-3.3-70b"
 
     groq_api_key: str = ""
+    # Groq retired the Llama 3.3 models. This is the free-tier model the
+    # context budget in app/retrieval/context.py is sized against, and it
+    # is on the account's model list; `llama-3.3-70b-versatile` returns
+    # `model_not_found`, which degraded every answer to citations.
+    groq_model: str = "openai/gpt-oss-120b"
 
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash-lite"
@@ -101,7 +106,6 @@ class Settings(BaseSettings):
     worker_dir: str = "./data/work"
 
     # ── LLM ─────────────────────────────────────────────────
-    llm_model: str = "llama-3.3-70b-versatile"
     llm_temperature: float = 0.1
     llm_max_tokens: int = 4096
 
