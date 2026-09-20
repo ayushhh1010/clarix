@@ -952,6 +952,38 @@ code, pre, .mono {
   z-index: 0;
 }
 
+/*
+  Indeterminate bar, used while indexing.
+
+  Indexing streams chunks from a generator, so the total is unknown until
+  the walk ends and there is no honest percentage to fill. A travelling
+  band says "working" without claiming to know how much is left.
+*/
+.ingestion-progress-bar-indeterminate {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 35%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--success), transparent);
+  animation: ingestion-sweep 1.6s ease-in-out infinite;
+}
+
+@keyframes ingestion-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(340%); }
+}
+
+/* Respect a reduced-motion preference: hold a steady band instead. */
+@media (prefers-reduced-motion: reduce) {
+  .ingestion-progress-bar-indeterminate {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
 /* ── Stats row ────────────────────────────── */
 
 .ingestion-stats {

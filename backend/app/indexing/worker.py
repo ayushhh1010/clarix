@@ -122,6 +122,18 @@ async def handle_full_index(
     except UnsafeSourceError as exc:
         raise PermanentJobFailure(str(exc)) from exc
 
+    # The clone is the worker's phase; `index_repository` takes over after.
+    # Without this the UI shows no active step while a large repository
+    # clones, which is the slowest part before indexing even starts.
+    await db.execute(
+        text("UPDATE repositories SET status = 'ingesting', "
+             "ingestion_phase = 'clone', ingestion_total_chunks = 0, "
+             "ingestion_cached_chunks = 0, error_message = NULL, "
+             "updated_at = now() WHERE id = :i"),
+        {"i": job.repo_id},
+    )
+    await db.commit()
+
     config.workdir.mkdir(parents=True, exist_ok=True)
     dest = Path(tempfile.mkdtemp(prefix="clarix_src_", dir=str(config.workdir)))
     try:

@@ -160,6 +160,56 @@ async def test_index_writes_chunks_and_marks_ready(async_session, repo_row, tree
     assert n == stats.chunks_written
 
 
+async def test_live_progress_counters_are_published(
+    async_session, repo_row, tree, chunker
+):
+    """
+    The UI renders a chunk counter and a cache badge while indexing.
+
+    Those columns were never written: the whole progress panel sat empty
+    for the length of the run, which on a 3,600-chunk repository is about
+    26 minutes of a dashboard that looks stuck. The counters are written
+    per batch, so this asserts they survive to the end of a real index.
+    """
+    emb = FakeEmbedder()
+    stats = await _index(async_session, tree, chunker, emb)
+
+    row = (
+        await async_session.execute(
+            text(
+                "SELECT ingestion_total_chunks, ingestion_cached_chunks, "
+                "ingestion_phase FROM repositories WHERE id = :i"
+            ),
+            {"i": REPO},
+        )
+    ).one()
+    assert row.ingestion_total_chunks == stats.chunks_written > 0, (
+        "the chunk counter the dashboard reads was never written"
+    )
+    assert row.ingestion_phase == "done"
+
+
+async def test_cached_chunk_counter_reflects_a_reindex(
+    async_session, repo_row, tree, chunker
+):
+    """
+    Second pass over unchanged content is served from the embedding cache,
+    and the badge that advertises that must be driven by a real count.
+    """
+    emb = FakeEmbedder()
+    await _index(async_session, tree, chunker, emb)
+    stats = await _index(async_session, tree, chunker, emb)
+    assert stats.cache_hits > 0, "the fixture should re-hit the cache"
+
+    cached = (
+        await async_session.execute(
+            text("SELECT ingestion_cached_chunks FROM repositories WHERE id = :i"),
+            {"i": REPO},
+        )
+    ).scalar_one()
+    assert cached == stats.cache_hits
+
+
 async def test_every_chunk_gets_both_vector_representations(
     async_session, repo_row, tree, chunker
 ):

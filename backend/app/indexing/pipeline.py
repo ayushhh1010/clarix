@@ -398,6 +398,28 @@ async def index_repository(
                 db, batch, repo_id, embedder, model_id, index_version, stats
             )
             seen.update(c.chunk_id for c in batch)
+
+            # Publish live counts. The frontend renders a chunk counter and
+            # a cache badge during indexing, and before this they were never
+            # written -- the whole progress panel sat empty for the length
+            # of the run, which on a 3,600-chunk repository is ~26 minutes.
+            #
+            # No percentage: `iter_chunks` is a generator, so the total is
+            # genuinely unknown until the walk finishes. Reporting a
+            # fraction of an unknown total would mean inventing one.
+            await db.execute(
+                text(
+                    "UPDATE repositories SET "
+                    "ingestion_total_chunks = :written, "
+                    "ingestion_cached_chunks = :cached, "
+                    "updated_at = now() WHERE id = :id"
+                ),
+                {
+                    "id": repo_id,
+                    "written": stats.chunks_written,
+                    "cached": stats.cache_hits,
+                },
+            )
             # Commit per batch. Bounded transactions keep peak memory and
             # lock duration proportional to the batch, and avoid the
             # long-transaction hazards documented in app/retrieval/hybrid.py.
