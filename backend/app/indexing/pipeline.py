@@ -111,9 +111,34 @@ class IndexStats:
 
 
 def iter_source_files(root: Path) -> Iterator[Path]:
-    """Yield indexable files, skipping vendored and generated trees."""
+    """
+    Yield indexable files, skipping vendored and generated trees.
+
+    Symlinks are refused, and every path is confirmed to resolve inside
+    the checkout.
+
+    A cloned repository is attacker-controlled content. `Path.is_file()`
+    and `read_text()` both follow symlinks, so without this a repository
+    containing `notes.txt -> /proc/self/environ` would have the indexer's
+    own environment -- DATABASE_URL, EMBEDDING_API_KEY -- read, chunked,
+    embedded and stored as a chunk the submitter can then retrieve through
+    ordinary search. Nothing in the extension or size filters stops it:
+    the attacker picks the link's name, and /proc entries report size 0.
+
+    The containment check is deliberately separate from the symlink check,
+    because a symlinked *parent directory* would otherwise let a perfectly
+    ordinary-looking file resolve outside the root.
+    """
+    root_resolved = root.resolve()
     for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            continue
         if not path.is_file():
+            continue
+        try:
+            if not path.resolve().is_relative_to(root_resolved):
+                continue
+        except OSError:
             continue
         if any(part in SKIP_DIRS for part in path.parts):
             continue

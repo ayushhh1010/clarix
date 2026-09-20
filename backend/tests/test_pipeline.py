@@ -160,6 +160,97 @@ async def test_index_writes_chunks_and_marks_ready(async_session, repo_row, tree
     assert n == stats.chunks_written
 
 
+# --- symlink containment ---------------------------------------------------
+#
+# A cloned repository is attacker-controlled content. These run wherever the
+# host can create symlinks; on Windows that needs elevation, but the
+# deployment target is Linux and CI is Linux, so they execute where the
+# vulnerability is reachable.
+
+NLC = chr(10)  # a newline, written without escapes
+
+
+def _can_symlink(tmp_path) -> bool:
+    try:
+        (tmp_path / "_probe_target").write_text("x")
+        (tmp_path / "_probe_link").symlink_to(tmp_path / "_probe_target")
+    except (OSError, NotImplementedError):
+        return False
+    return True
+
+
+@pytest.fixture
+def symlinks(tmp_path):
+    if not _can_symlink(tmp_path):
+        pytest.skip("this host cannot create symlinks (needs elevation on Windows)")
+    return tmp_path
+
+
+def test_a_symlink_out_of_the_checkout_is_not_indexed(symlinks, tmp_path_factory):
+    """
+    The exfiltration path.
+
+    Without this guard a repository containing `notes.txt -> /etc/passwd`
+    -- or `-> /proc/self/environ`, which holds DATABASE_URL and
+    EMBEDDING_API_KEY on the deployed indexer -- has that file read,
+    chunked, embedded and stored as a chunk the submitter can retrieve by
+    searching their own repository.
+    """
+    from app.indexing.pipeline import iter_source_files
+
+    outside = tmp_path_factory.mktemp("outside")
+    secret = outside / "secret.env"
+    secret.write_text("DATABASE_URL=postgresql://u:REAL_PASSWORD@db/prod" + NLC)
+
+    root = symlinks / "repo"
+    root.mkdir()
+    (root / "real.py").write_text("def ok():" + NLC + "    return 1" + NLC)
+    # A name the extension filter happily admits.
+    (root / "notes.txt").symlink_to(secret)
+    (root / "config.yml").symlink_to(secret)
+
+    found = {p.name for p in iter_source_files(root)}
+    assert found == {"real.py"}, f"a symlink escaped the checkout: {found}"
+
+
+def test_a_file_under_a_symlinked_directory_is_not_indexed(symlinks, tmp_path_factory):
+    """
+    The second door. The file itself is not a link, so an `is_symlink()`
+    check on the file alone would pass it; only resolving against the root
+    catches a symlinked parent.
+    """
+    from app.indexing.pipeline import iter_source_files
+
+    outside = tmp_path_factory.mktemp("outside_dir")
+    (outside / "leak.py").write_text("SECRET = 'exfiltrated'" + NLC)
+
+    root = symlinks / "repo2"
+    root.mkdir()
+    (root / "keep.py").write_text("def ok():" + NLC + "    return 1" + NLC)
+    try:
+        (root / "vendored").symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("directory symlinks unavailable on this host")
+
+    found = {p.name for p in iter_source_files(root)}
+    assert "leak.py" not in found, "a symlinked directory leaked its contents"
+    assert found == {"keep.py"}
+
+
+def test_ordinary_files_are_still_indexed(symlinks):
+    """The guard must not throw the repository out with the symlinks."""
+    from app.indexing.pipeline import iter_source_files
+
+    root = symlinks / "repo3"
+    (root / "pkg").mkdir(parents=True)
+    (root / "a.py").write_text("def a():" + NLC + "    return 1" + NLC)
+    (root / "pkg" / "b.py").write_text("def b():" + NLC + "    return 2" + NLC)
+    (root / "README.md").write_text("# hello" + NLC)
+
+    found = {p.name for p in iter_source_files(root)}
+    assert found == {"a.py", "b.py", "README.md"}
+
+
 async def test_live_progress_counters_are_published(
     async_session, repo_row, tree, chunker
 ):

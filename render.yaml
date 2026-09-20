@@ -35,8 +35,16 @@ services:
           name: clarix-indexer
           type: web
           envVarKey: RENDER_EXTERNAL_URL
+      # Read from the indexer rather than generated here. Two
+      # `generateValue` entries produce two DIFFERENT random secrets, the
+      # indexer rejects the API's bearer token with 401, and the dense arm
+      # silently switches off -- which is exactly the failure this whole
+      # service was added to fix, reintroduced through configuration.
       - key: EMBEDDING_API_KEY
-        generateValue: true
+        fromService:
+          name: clarix-indexer
+          type: web
+          envVarKey: EMBEDDING_API_KEY
       - key: DATABASE_URL
         sync: false
       - key: SECRET_KEY
@@ -65,11 +73,12 @@ services:
         value: "3.11"
       - key: APP_ENV
         value: production
-      # Must match the API's EMBEDDING_API_KEY. The endpoint runs a model on
+      # Generated here and read by the API via `fromService`, so the two
+      # sides cannot drift apart. The endpoint runs a model on
       # caller-supplied text, and app.indexing.service refuses to start in
-      # production without it.
+      # production without this set.
       - key: EMBEDDING_API_KEY
-        sync: false
+        generateValue: true
       - key: DATABASE_URL
         sync: false
       # Cache the model between deploys so a restart does not re-download

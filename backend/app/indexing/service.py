@@ -236,6 +236,13 @@ def build_app(settings=None) -> FastAPI:
                 logger.info("indexer stopping; waiting for the current job")
                 worker.stop(timeout=WORKER_SHUTDOWN_SECONDS)
 
+    # No interactive docs in production. This service talks to one caller
+    # -- the API -- and never to a person, so /docs and /redoc are surface
+    # that publishes the request schema of an authenticated endpoint and
+    # buy nothing. They stay on outside production, where they are useful
+    # for poking at the endpoint by hand.
+    in_production = settings.app_env == "production"
+
     app = FastAPI(
         title="Clarix indexer",
         description=(
@@ -244,6 +251,9 @@ def build_app(settings=None) -> FastAPI:
         ),
         version="2.0.0",
         lifespan=lifespan,
+        docs_url=None if in_production else "/docs",
+        redoc_url=None if in_production else "/redoc",
+        openapi_url=None if in_production else "/openapi.json",
     )
 
     @app.post(
