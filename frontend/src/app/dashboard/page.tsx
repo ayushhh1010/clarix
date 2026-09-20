@@ -904,47 +904,57 @@ function DashboardContent() {
                                     <h3 className="ingestion-title">
                                         {activeRepo.status === "pending" ? "Preparing analysis..." : "Indexing codebase"}
                                     </h3>
+                                    {/*
+                                      Three steps, not four. Indexing streams:
+                                      parse, embed and store interleave per
+                                      batch rather than running in sequence,
+                                      which is what keeps peak memory bounded.
+                                      The old Parse/Embed/Store steps described
+                                      a pipeline that no longer exists and could
+                                      never light up.
+                                    */}
                                     <div className="ingestion-steps">
-                                        <IngestionStep 
-                                            label="Clone" 
-                                            active={activeRepo.ingestion_phase === "clone"} 
-                                            done={["parse", "embed", "store", "done"].includes(activeRepo.ingestion_phase || "")} 
+                                        <IngestionStep
+                                            label="Clone"
+                                            active={activeRepo.ingestion_phase === "clone"}
+                                            done={["index", "done"].includes(activeRepo.ingestion_phase || "") || activeRepo.status === "ready"}
                                         />
                                         <div className="ingestion-step-connector" />
-                                        <IngestionStep 
-                                            label="Parse" 
-                                            active={activeRepo.ingestion_phase === "parse"} 
-                                            done={["embed", "store", "done"].includes(activeRepo.ingestion_phase || "")} 
+                                        <IngestionStep
+                                            label="Index"
+                                            active={activeRepo.ingestion_phase === "index"}
+                                            done={activeRepo.ingestion_phase === "done" || activeRepo.status === "ready"}
                                         />
                                         <div className="ingestion-step-connector" />
-                                        <IngestionStep 
-                                            label="Embed" 
-                                            active={activeRepo.ingestion_phase === "embed"} 
-                                            done={["store", "done"].includes(activeRepo.ingestion_phase || "")} 
-                                        />
-                                        <div className="ingestion-step-connector" />
-                                        <IngestionStep 
-                                            label="Store" 
-                                            active={activeRepo.ingestion_phase === "store"} 
-                                            done={activeRepo.ingestion_phase === "done" || activeRepo.status === "ready"} 
+                                        <IngestionStep
+                                            label="Ready"
+                                            active={false}
+                                            done={activeRepo.status === "ready"}
                                         />
                                     </div>
                                     {activeRepo.status === "ingesting" && (
                                         <div className="ingestion-progress-section">
+                                            {/*
+                                              Indeterminate while indexing. The backend streams chunks
+                                              from a generator, so the total is not known until the walk
+                                              finishes -- there is no honest percentage to show, and the
+                                              old bar sat at its 2% floor for the whole run. The chunk
+                                              counter below is the real signal of progress.
+                                            */}
                                             <div className="ingestion-progress-bar-track">
-                                                <div className="ingestion-progress-bar-fill" style={{ width: `${Math.max(activeRepo.ingestion_progress || 0, 2)}%` }} />
-                                                <div className="ingestion-progress-bar-glow" style={{ width: `${Math.max(activeRepo.ingestion_progress || 0, 2)}%` }} />
+                                                <div className="ingestion-progress-bar-indeterminate" />
                                             </div>
                                             <div className="ingestion-stats">
-                                                <span className="ingestion-pct">{activeRepo.ingestion_progress || 0}%</span>
-                                                {(activeRepo.ingestion_total_chunks || 0) > 0 && (
-                                                    <span className="ingestion-detail">
-                                                        {activeRepo.ingestion_total_chunks?.toLocaleString()} chunks
-                                                        {(activeRepo.ingestion_cached_chunks || 0) > 0 && (
-                                                            <span className="ingestion-cache-badge">⚡ {activeRepo.ingestion_cached_chunks?.toLocaleString()} cached</span>
-                                                        )}
-                                                    </span>
-                                                )}
+                                                <span className="ingestion-detail">
+                                                    {(activeRepo.ingestion_total_chunks || 0) > 0
+                                                        ? `${activeRepo.ingestion_total_chunks?.toLocaleString()} chunks indexed`
+                                                        : activeRepo.ingestion_phase === "clone"
+                                                            ? "Cloning repository..."
+                                                            : "Starting..."}
+                                                    {(activeRepo.ingestion_cached_chunks || 0) > 0 && (
+                                                        <span className="ingestion-cache-badge">⚡ {activeRepo.ingestion_cached_chunks?.toLocaleString()} cached</span>
+                                                    )}
+                                                </span>
                                             </div>
                                         </div>
                                     )}

@@ -4,25 +4,20 @@ Production-grade setup with CORS, lifespan events, structured logging,
 rate limiting, and health checks.
 """
 
-# Must happen before ANY import that transitively pulls in gitpython.
-# Render's runtime has git installed but it may not be on the PATH that
-# Python resolves at import time. This silences the module-level check;
-# the actual git binary is located explicitly inside clone_repo().
-import os
-os.environ.setdefault("GIT_PYTHON_REFRESH", "quiet")
-
+# The GIT_PYTHON_REFRESH workaround that used to live here is gone with
+# GitPython: app/indexing/source.py shells out to git directly, so there is
+# no module-level binary discovery to silence.
 import logging
 import sys
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import get_settings
-from app.database import init_db, close_db
+from app.database import close_db, init_db
 from app.rate_limit import limiter
 
 settings = get_settings()
@@ -45,29 +40,36 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
     logger.info("🚀 Starting Clarix")
     logger.info("   Environment : %s", settings.app_env)
-    logger.info("   LLM Model   : %s", settings.llm_model)
-    logger.info("   Embed Model : %s", settings.embedding_model)
+    logger.info("   Index ver.  : %s", settings.index_version)
 
     # Initialize database tables
     await init_db()
     logger.info("✅ Database initialized")
 
-    # Redis configured lazily — connects on first use
-    logger.info("✅ Redis configured at %s", settings.redis_url)
+    # LLM providers: only those with a key are constructed, so the
+    # router's candidate list is exactly what is configured.
+    from app.llm import BreakerRegistry, LLMRouter, build_providers
+    from app.retrieval.query_embedder import build_query_embedder
 
-    # Embeddings via HuggingFace Inference API — no local model loading
-    logger.info("✅ Embeddings via HF Inference API (%s)", settings.embedding_model)
+    providers = build_providers(settings)
+    app.state.llm_router = LLMRouter(providers, BreakerRegistry())
+    app.state.query_embedder = build_query_embedder(settings)
+    logger.info(
+        "LLM providers: %s",
+        ", ".join(p.name for p in providers) or "none (generation will degrade "
+        "to returning citations)",
+    )
+    logger.info(
+        "Query embedding: %s",
+        settings.embedding_endpoint or "not configured (dense arm disabled)",
+    )
 
     yield
 
     # Shutdown
-    logger.info("🛑 Shutting down...")
+    logger.info("Shutting down")
     await close_db()
-
-    from app.memory.long_term import close_redis
-    await close_redis()
-
-    logger.info("👋 Shutdown complete")
+    logger.info("Shutdown complete")
 
 
 # ── Application ─────────────────────────────────────────────
@@ -75,9 +77,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Clarix",
     description=(
-        "Agentic AI backend for understanding codebases, answering technical questions, "
-        "debugging issues, and suggesting code modifications. "
-        "Powered by LangGraph, RAG, and GPT-4o."
+        "Repository-aware code intelligence: AST-grounded indexing, routed "
+        "hybrid retrieval over pgvector, and quota-aware generation across "
+        "free-tier providers."
     ),
     version="1.0.0",
     lifespan=lifespan,
@@ -101,10 +103,10 @@ app.add_middleware(
 
 # ── Routers ──────────────────────────────────────────────────
 
-from app.routes.repo import router as repo_router
-from app.routes.chat import router as chat_router
 from app.routes.agent import router as agent_router
 from app.routes.auth import router as auth_router
+from app.routes.chat import router as chat_router
+from app.routes.repo import router as repo_router
 
 app.include_router(auth_router)
 app.include_router(repo_router)
@@ -116,12 +118,20 @@ app.include_router(agent_router)
 
 @app.api_route("/health", methods=["GET", "HEAD"], tags=["System"])
 async def health_check():
-    """Basic health check endpoint."""
+    """
+    Liveness plus the state of every dependency that can degrade.
+
+    Circuit breaker state is included because a provider being tripped is
+    the difference between a healthy service and one silently answering
+    from its last fallback.
+    """
     return {
         "status": "healthy",
         "service": "Clarix",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "environment": settings.app_env,
+        "llm": app.state.llm_router.health(),
+        "query_embedding": getattr(app.state.query_embedder, "available", False),
     }
 
 

@@ -4,7 +4,7 @@ Authentication routes: register, login, OAuth (GitHub / Google), user profile.
 
 import logging
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 import httpx
@@ -16,15 +16,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.models import User
+from app.rate_limit import limiter
 from app.schemas import (
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
     LoginRequest,
     RegisterRequest,
-    TokenResponse,
-    UserResponse,
-    ForgotPasswordRequest,
     ResetPasswordRequest,
-    ChangePasswordRequest,
+    TokenResponse,
     UpdateProfileRequest,
+    UserResponse,
 )
 from app.security import (
     create_access_token,
@@ -32,7 +33,6 @@ from app.security import (
     hash_password,
     verify_password,
 )
-from app.rate_limit import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 logger = logging.getLogger("copilot.auth")
@@ -108,7 +108,7 @@ async def forgot_password(req: ForgotPasswordRequest, db: AsyncSession = Depends
     # Generate reset token
     token = secrets.token_urlsafe(32)
     user.password_reset_token = token
-    user.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
+    user.reset_token_expires = datetime.now(UTC) + timedelta(hours=1)
     await db.flush()
     await db.commit()
     
@@ -130,7 +130,7 @@ async def reset_password(req: ResetPasswordRequest, db: AsyncSession = Depends(g
     if not user:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
     
-    if user.reset_token_expires and user.reset_token_expires < datetime.now(timezone.utc):
+    if user.reset_token_expires and user.reset_token_expires < datetime.now(UTC):
         raise HTTPException(status_code=400, detail="Reset token has expired")
     
     user.hashed_password = hash_password(req.new_password)

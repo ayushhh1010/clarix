@@ -1,6 +1,22 @@
+# Local development dependencies.
+#
+# Two changes from v1, both load-bearing:
+#
+#   The image is pgvector/pgvector, not postgres:16-alpine. The stock
+#   Postgres image ships no pgvector, so `CREATE EXTENSION vector` in
+#   migration 0002 fails and nothing else can run. The schema needs
+#   pgvector >= 0.7.0 for halfvec and binary_quantize; the migration
+#   asserts this rather than failing later on a missing type.
+#
+#   Redis is gone. v1 declared a memory layer nothing ever wrote to, so the
+#   container existed to serve a module that was deleted.
+#
+# The test suite does NOT use this file -- it runs PostgreSQL 18.6 with
+# pgvector 0.8.6 from the `embedded-postgres` wheel, so tests need no
+# daemon. This is only for running the app locally.
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg17
     container_name: clarix_postgres
     environment:
       POSTGRES_USER: clarix
@@ -16,19 +32,5 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    container_name: clarix_redis
-    ports:
-      - "6380:6379"
-    volumes:
-      - redisdata:/data
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
 volumes:
   pgdata:
-  redisdata:

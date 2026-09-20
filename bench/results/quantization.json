@@ -1,0 +1,114 @@
+{
+  "corpus": 3601,
+  "dim": 768,
+  "queries": 200,
+  "k": 10,
+  "centroid_abs_mean": 0.01143657136708498,
+  "results": [
+    {
+      "method": "halfvec exact (no ANN)",
+      "fetch": null,
+      "threshold": null,
+      "recall": 0.9995,
+      "ms": null
+    },
+    {
+      "method": "binary + rescore, zero threshold",
+      "fetch": 10,
+      "threshold": "zero",
+      "recall": 0.8335,
+      "ms": 4.14
+    },
+    {
+      "method": "binary + rescore, zero threshold",
+      "fetch": 50,
+      "threshold": "zero",
+      "recall": 0.998,
+      "ms": 4.02
+    },
+    {
+      "method": "binary + rescore, zero threshold",
+      "fetch": 100,
+      "threshold": "zero",
+      "recall": 0.9995,
+      "ms": 3.74
+    },
+    {
+      "method": "binary + rescore, zero threshold",
+      "fetch": 200,
+      "threshold": "zero",
+      "recall": 1.0,
+      "ms": 4.42
+    },
+    {
+      "method": "binary + rescore, zero threshold",
+      "fetch": 500,
+      "threshold": "zero",
+      "recall": 0.9995,
+      "ms": 10.12
+    },
+    {
+      "method": "binary + rescore, zero threshold",
+      "fetch": 1000,
+      "threshold": "zero",
+      "recall": 0.9995,
+      "ms": 5.16
+    },
+    {
+      "method": "binary + rescore, zero threshold",
+      "fetch": 2000,
+      "threshold": "zero",
+      "recall": 1.0,
+      "ms": 5.28
+    },
+    {
+      "method": "binary + rescore, centroid threshold",
+      "fetch": 10,
+      "threshold": "centroid",
+      "recall": 0.8275,
+      "ms": 1.86
+    },
+    {
+      "method": "binary + rescore, centroid threshold",
+      "fetch": 50,
+      "threshold": "centroid",
+      "recall": 0.9975,
+      "ms": 2.18
+    },
+    {
+      "method": "binary + rescore, centroid threshold",
+      "fetch": 100,
+      "threshold": "centroid",
+      "recall": 1.0,
+      "ms": 2.04
+    },
+    {
+      "method": "binary + rescore, centroid threshold",
+      "fetch": 200,
+      "threshold": "centroid",
+      "recall": 1.0,
+      "ms": 2.05
+    },
+    {
+      "method": "binary + rescore, centroid threshold",
+      "fetch": 500,
+      "threshold": "centroid",
+      "recall": 1.0,
+      "ms": 2.39
+    },
+    {
+      "method": "binary + rescore, centroid threshold",
+      "fetch": 1000,
+      "threshold": "centroid",
+      "recall": 1.0,
+      "ms": 4.39
+    },
+    {
+      "method": "binary + rescore, centroid threshold",
+      "fetch": 2000,
+      "threshold": "centroid",
+      "recall": 0.9995,
+      "ms": 5.04
+    }
+  ]
+}

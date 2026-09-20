@@ -3,10 +3,9 @@ Pydantic schemas for API request / response validation.
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Generic, TypeVar
 
-from pydantic import BaseModel, Field, EmailStr
-
+from pydantic import BaseModel, EmailStr, Field
 
 # ── Auth ────────────────────────────────────────────────────
 
@@ -36,8 +35,8 @@ class ChangePasswordRequest(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    email: Optional[EmailStr] = None
+    name: str | None = Field(None, min_length=1, max_length=255)
+    email: EmailStr | None = None
 
 
 class UserResponse(BaseModel):
@@ -66,14 +65,14 @@ class RepoUploadRequest(BaseModel):
 class RepoResponse(BaseModel):
     id: str
     name: str
-    url: Optional[str] = None
+    url: str | None = None
     status: str
     file_count: int = 0
     chunk_count: int = 0
     ingestion_progress: int = 0
     ingestion_total_chunks: int = 0
     ingestion_cached_chunks: int = 0
-    error_message: Optional[str] = None
+    error_message: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -84,7 +83,7 @@ class RepoFileNode(BaseModel):
     name: str
     path: str
     type: str  # "file" or "directory"
-    children: Optional[list["RepoFileNode"]] = None
+    children: list["RepoFileNode"] | None = None
 
 
 # ── Chat ────────────────────────────────────────────────────
@@ -92,7 +91,7 @@ class RepoFileNode(BaseModel):
 class ChatRequest(BaseModel):
     repo_id: str = Field(..., description="Repository ID to query against")
     message: str = Field(..., min_length=1, description="User message")
-    conversation_id: Optional[str] = Field(None, description="Existing conversation ID; omit to start new")
+    conversation_id: str | None = Field(None, description="Existing conversation ID; omit to start new")
 
 
 class ChatResponse(BaseModel):
@@ -107,7 +106,7 @@ class ChatResponse(BaseModel):
 class AgentRunRequest(BaseModel):
     repo_id: str
     task: str = Field(..., min_length=1, description="Natural language description of the agent task")
-    conversation_id: Optional[str] = None
+    conversation_id: str | None = None
 
 
 class AgentStepResponse(BaseModel):
@@ -142,7 +141,7 @@ class MessageResponse(BaseModel):
     id: str
     role: str
     content: str
-    metadata_json: Optional[str] = None
+    metadata_json: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -158,8 +157,6 @@ class FileContentResponse(BaseModel):
 
 
 # ── Pagination ──────────────────────────────────────────────
-
-from typing import TypeVar, Generic
 
 T = TypeVar("T")
 

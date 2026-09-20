@@ -1,209 +1,198 @@
 """
-Agent routes — run the full multi-agent workflow via LangGraph.
-All routes are scoped to the currently authenticated user.
+Agent routes.
+
+THE v1 AGENT WAS REMOVED, NOT PORTED.
+
+Its LangGraph pipeline was planner -> retrieval -> tool agent -> executor,
+three sequential LLM calls around one retrieval. Reading it showed the tool
+path was unreachable: `needs_tools` was a substring match on the model's own
+prose (`"need to read" in analysis.lower()`) gated behind `context_str == ""`,
+and retrieval almost always returned something, so the six registered tools
+never fired. The tool agent's own prompt said "Do NOT attempt to call any
+tools". The graph had no cycles either -- `_route_after_planner` returned a
+constant.
+
+So it cost three LLM calls and several seconds of added latency to produce
+what one call produces, and on free-tier quotas three calls per question is
+the difference between answering ~200 questions a day and ~65. Porting a
+design measured as net-negative would have been the wrong kind of
+faithfulness.
+
+These endpoints are kept because the frontend calls them. They now run the
+same routed retrieval and generation as `/api/chat`, and the reported steps
+describe what actually happened -- which arms ran, how much context was
+packed, which provider answered -- rather than narrating agent roles that
+no longer exist.
+
+A real agent loop, with cycles, a relevance grader and genuine tool calls,
+is worth building. It should be justified by the evaluation harness against
+this single-pass baseline before it ships, which is exactly what v1 never
+did.
 """
+
+from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import conversations as convo
 from app.database import get_db
+from app.llm.types import AllProvidersFailed, ContextTooLong
 from app.models import Repository, User
+from app.retrieval import hybrid_search
+from app.retrieval.context import build_messages, pack
 from app.schemas import AgentRunRequest, AgentRunResponse, AgentStepResponse
-from app.memory.manager import MemoryManager
-from app.agents.graph import get_compiled_graph
 from app.security import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agent", tags=["Agent"])
 
+RETRIEVE_LIMIT = 20
 
-# ── Helper: verify repo belongs to user ──────────────────────
 
 async def _get_user_repo(db: AsyncSession, repo_id: str, user: User) -> Repository:
-    """Fetch a repo and verify it belongs to the current user."""
     repo = await db.get(Repository, repo_id)
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
     if repo.user_id is not None and repo.user_id != user.id:
         raise HTTPException(status_code=404, detail="Repository not found")
+    if repo.status != "ready":
+        raise HTTPException(
+            status_code=409, detail=f"Repository is not ready (status: {repo.status})"
+        )
     return repo
+
+
+async def _run(request: Request, db: AsyncSession, repo: Repository,
+               user: User, payload: AgentRunRequest):
+    """Execute the pipeline, returning (conversation, steps, answer)."""
+    conversation = await convo.get_or_create_conversation(
+        db, repo.id, user.id, payload.conversation_id, title=payload.task[:100]
+    )
+    await convo.save_message(db, conversation.id, "user", payload.task)
+    await db.commit()
+
+    embedder = request.app.state.query_embedder
+    vectors = await embedder.embed_query(payload.task)
+    if vectors is None:
+        chunks, trace = await hybrid_search(
+            db, repo.id, payload.task, query_bits="0", query_vector="[0]",
+            limit=RETRIEVE_LIMIT, use_dense=False,
+        )
+    else:
+        chunks, trace = await hybrid_search(
+            db, repo.id, payload.task,
+            query_bits=vectors.bits, query_vector=vectors.vector,
+            limit=RETRIEVE_LIMIT,
+        )
+
+    steps = [
+        AgentStepResponse(
+            step="route",
+            agent="router",
+            content=(
+                f"Classified as a {trace.route} query; ran "
+                f"{', '.join(k for k, v in trace.arm_counts.items() if v > 0) or 'no'} "
+                f"retrieval arm(s)."
+            ),
+        ),
+        AgentStepResponse(
+            step="retrieve",
+            agent="retrieval",
+            content=(
+                f"Fused {trace.fused_count} candidates in "
+                f"{trace.total_ms:.0f} ms. Arm yields: {trace.arm_counts}."
+            ),
+        ),
+    ]
+
+    packed = pack(chunks, question_tokens=len(payload.task) // 3)
+    steps.append(AgentStepResponse(
+        step="pack",
+        agent="context",
+        content=(
+            f"Packed {len(packed.chunks)} of {len(chunks)} chunks into "
+            f"{packed.used_tokens} tokens ({packed.dropped} did not fit)."
+        ),
+    ))
+
+    messages = build_messages(payload.task, packed)
+    router_ = request.app.state.llm_router
+    try:
+        completion, _ = await router_.complete(db, messages, max_tokens=1500)
+        answer = completion.text
+        detail = f"Answered by {completion.provider} in {completion.latency_ms:.0f} ms"
+        if completion.degraded:
+            detail += f" (after {', '.join(completion.fallbacks)} were unavailable)"
+    except ContextTooLong as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except AllProvidersFailed as exc:
+        logger.error("generation unavailable: %s", exc)
+        answer = _citations_only(packed)
+        detail = f"No provider available: {exc}"
+
+    steps.append(AgentStepResponse(step="generate", agent="llm", content=detail))
+
+    await convo.save_message(
+        db, conversation.id, "assistant", answer,
+        metadata={"sources": packed.citations, "route": trace.route},
+    )
+    await db.commit()
+    return conversation, steps, answer, packed
+
+
+def _citations_only(packed) -> str:
+    if packed.empty:
+        return "No language model is available, and no relevant code was found."
+    lines = ["No language model is available. Most relevant code:", ""]
+    lines += [f"- `{c.citation}`" for c in packed.chunks[:8]]
+    return "\n".join(lines)
 
 
 @router.post("/run", response_model=AgentRunResponse)
 async def run_agent(
-    request: AgentRunRequest,
+    payload: AgentRunRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Run the full multi-agent workflow (Planner → Retrieval → Tool → Executor).
-    Returns the final answer along with all intermediate steps.
-    """
-    # Validate repo ownership
-    repo = await _get_user_repo(db, request.repo_id, user)
-    if repo.status != "ready":
-        raise HTTPException(status_code=400, detail=f"Repository not ready (status: {repo.status})")
-
-    memory = MemoryManager(db, request.repo_id)
-    conv = await memory.get_or_create_conv(
-        conversation_id=request.conversation_id,
-        title=f"Agent: {request.task[:80]}",
-        user_id=user.id,
-    )
-
-    # Save the user task as a message
-    await memory.save_user_message(conv.id, request.task)
-
-    # Build initial state
-    initial_state = {
-        "messages": [],
-        "user_query": request.task,
-        "repo_id": request.repo_id,
-        "repo_path": repo.local_path,
-        "plan": [],
-        "retrieved_context": [],
-        "tool_results": [],
-        "final_answer": "",
-        "current_step": 0,
-        "needs_tools": False,
-        "error": None,
-        "steps_log": [],
-    }
-
-    # Run the compiled LangGraph
-    graph = get_compiled_graph()
-
-    try:
-        result = await graph.ainvoke(initial_state)
-    except Exception as exc:
-        logger.exception("Agent execution failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Agent execution failed: {str(exc)}")
-
-    final_answer = result.get("final_answer", "No answer generated.")
-    steps_log = result.get("steps_log", [])
-
-    # Save assistant response
-    sources = [
-        {"file_path": c.get("file_path", ""), "relevance_score": c.get("relevance_score", 0)}
-        for c in result.get("retrieved_context", [])[:5]
-    ]
-    await memory.save_assistant_message(conv.id, final_answer, sources)
-    await db.commit()
-
-    # Format steps for response
-    agent_steps = []
-    for step in steps_log:
-        agent_steps.append(AgentStepResponse(
-            step=str(step.get("agent", "unknown")),
-            agent=str(step.get("agent", "unknown")),
-            content=json.dumps(
-                {k: v for k, v in step.items() if k != "agent"},
-                default=str,
-            ),
-        ))
-
+    repo = await _get_user_repo(db, payload.repo_id, user)
+    conversation, steps, answer, _ = await _run(request, db, repo, user, payload)
     return AgentRunResponse(
-        conversation_id=conv.id,
-        steps=agent_steps,
-        final_answer=final_answer,
+        conversation_id=conversation.id, steps=steps, final_answer=answer
     )
 
 
 @router.post("/run/stream")
 async def run_agent_stream(
-    request: AgentRunRequest,
+    payload: AgentRunRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Run the multi-agent workflow with SSE streaming.
-    Streams intermediate steps and the final answer.
-    """
-    repo = await _get_user_repo(db, request.repo_id, user)
-    if repo.status != "ready":
-        raise HTTPException(status_code=400, detail=f"Repository not ready (status: {repo.status})")
+    repo = await _get_user_repo(db, payload.repo_id, user)
 
-    memory = MemoryManager(db, request.repo_id)
-    conv = await memory.get_or_create_conv(
-        conversation_id=request.conversation_id,
-        title=f"Agent: {request.task[:80]}",
-        user_id=user.id,
-    )
-    await memory.save_user_message(conv.id, request.task)
-
-    initial_state = {
-        "messages": [],
-        "user_query": request.task,
-        "repo_id": request.repo_id,
-        "repo_path": repo.local_path,
-        "plan": [],
-        "retrieved_context": [],
-        "tool_results": [],
-        "final_answer": "",
-        "current_step": 0,
-        "needs_tools": False,
-        "error": None,
-        "steps_log": [],
-    }
-
-    graph = get_compiled_graph()
-
-    async def event_generator():
-        yield f"data: {json.dumps({'type': 'metadata', 'conversation_id': conv.id})}\n\n"
-
-        try:
-            async for event in graph.astream(initial_state):
-                for node_name, node_output in event.items():
-                    # Stream each agent step
-                    step_data = {
-                        "type": "agent_step",
-                        "agent": node_name,
-                    }
-
-                    if node_name == "planner" and "plan" in node_output:
-                        step_data["plan"] = node_output["plan"]
-                        step_data["needs_tools"] = node_output.get("needs_tools", False)
-
-                    elif node_name == "retrieval" and "retrieved_context" in node_output:
-                        step_data["chunks_found"] = len(node_output["retrieved_context"])
-                        step_data["top_files"] = list({
-                            c["file_path"] for c in node_output["retrieved_context"][:5]
-                        })
-
-                    elif node_name == "tool_agent" and "tool_results" in node_output:
-                        step_data["tools_called"] = [
-                            r["tool"] for r in node_output["tool_results"]
-                        ]
-
-                    elif node_name == "executor" and "final_answer" in node_output:
-                        step_data["type"] = "final_answer"
-                        step_data["content"] = node_output["final_answer"]
-
-                        # Save the answer
-                        await memory.save_assistant_message(
-                            conv.id, node_output["final_answer"]
-                        )
-                        await db.commit()
-
-                    yield f"data: {json.dumps(step_data, default=str)}\n\n"
-
-        except Exception as exc:
-            logger.exception("Agent stream error: %s", exc)
-            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
-
-        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+    async def events():
+        conversation, steps, answer, packed = await _run(
+            request, db, repo, user, payload
+        )
+        for step in steps:
+            yield _sse("step", step.model_dump())
+        yield _sse("sources", {"sources": packed.citations})
+        for i in range(0, len(answer), 120):
+            yield _sse("token", {"text": answer[i : i + 120]})
+        yield _sse("done", {"conversation_id": conversation.id})
 
     return StreamingResponse(
-        event_generator(),
+        events(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
