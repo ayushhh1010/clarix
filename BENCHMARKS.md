@@ -493,6 +493,42 @@ Two evaluation sets, because one of them could not see half the problem:
 | identifier | recall@10 | **+0.087** | [+0.057, +0.120] | <0.0001 | better |
 | identifier | **MRR** | **+0.184** | [+0.150, +0.219] | <0.0001 | **better** |
 
+### How reproducible are these numbers?
+
+The tables above are single runs, so it is fair to ask how much of the
+last digit is real. Three independent runs of the unchanged harness on the
+symbol test split (`bench/results/eval_reproducibility.json`):
+
+| configuration | metric | spread across 3 runs |
+|---|---|---:|
+| dense only | recall@10 | 0.0067 |
+| hybrid w=.5,.1,2 | recall@10 | 0.0033 |
+| ROUTED | MRR | 0.0008 |
+| **symbol only** | *every metric* | **0.0000** |
+| **lexical only** | *every metric* | **0.0000** |
+
+The control is the interesting part. The two arms that never touch the
+vector index are **bit-identical across all three runs**, on every metric.
+Every configuration that varies is one that uses the dense arm. That
+isolates the cause to HNSW index construction, which assigns node levels
+randomly, so each rebuild produces a slightly different graph and a
+slightly different tail of the candidate list.
+
+Consistent with that, `recall@1` never moved for any configuration -- the
+nearest neighbour is stable, and only deep ranks shuffle.
+
+The largest observed spread, 0.0067, is an order of magnitude smaller than
+the effect being claimed: ROUTED versus dense on identifier recall@10 is
++0.087 with a 95% CI of [+0.057, +0.120]. Build variance does not reach
+the bottom of that interval. **It does mean the third decimal place in
+these tables is not meaningful, and differences below about 0.01 on
+dense-dependent recall@10 should not be read as real.**
+
+This was found while checking that a refactor had not changed anything:
+one run disagreed with the committed numbers, and the third run matched
+them exactly. Worth recording, because "the numbers moved" and "the code
+changed" are easy to confuse.
+
 ### Replicated on an independent resample
 
 The evaluation sets were regenerated after a portability fix: file paths

@@ -116,11 +116,27 @@ def embed_cached(texts: list[str], cache_path: pathlib.Path, batch: int) -> np.n
 
 
 def bits_literal(vec: np.ndarray) -> str:
-    return "".join("1" if x > 0 else "0" for x in vec)
+    """
+    Delegates to the shipped quantiser rather than reimplementing it.
+
+    These two helpers previously had their own implementations. They were
+    verified equivalent to production over 200 vectors including exact
+    zeros -- but equivalence today is not a property, it is a coincidence
+    that holds until someone changes the threshold or the packing. An
+    evaluation harness that formats vectors differently from the serving
+    path silently measures a system nobody ships, and every number in
+    BENCHMARKS section 7 comes out of this file.
+    """
+    from app.indexing.embedder import EMBED_DIM, binary_quantize, bits_to_sql
+
+    return bits_to_sql(binary_quantize(vec.reshape(1, -1))[0], EMBED_DIM)
 
 
 def vec_literal(vec: np.ndarray) -> str:
-    return "[" + ",".join(f"{x:.6f}" for x in vec) + "]"
+    """The same halfvec literal the ingestion path writes."""
+    from app.indexing.embedder import vector_to_sql
+
+    return vector_to_sql(vec)
 
 
 def start_postgres():
