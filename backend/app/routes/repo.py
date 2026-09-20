@@ -166,7 +166,14 @@ async def get_repo_status(
         "repo_id": repo.id,
         "status": repo.status,
         "progress": repo.ingestion_progress,
+        # Both spellings. The frontend spreads this response over its
+        # repository object and reads `ingestion_phase`; returning only
+        # `phase` left every progress indicator permanently blank.
         "phase": repo.ingestion_phase,
+        "ingestion_phase": repo.ingestion_phase,
+        "ingestion_total_chunks": repo.ingestion_total_chunks,
+        "ingestion_cached_chunks": repo.ingestion_cached_chunks,
+        "ingestion_progress": repo.ingestion_progress,
         "chunk_count": repo.chunk_count,
         "indexed_commit": repo.indexed_commit_sha,
         "last_indexed_at": repo.last_indexed_at,

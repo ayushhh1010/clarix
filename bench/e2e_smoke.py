@@ -176,15 +176,24 @@ async def run(sync_url: str, workdir: pathlib.Path) -> int:
             )
         ).scalar()
         n_cache = (await db.execute(text("SELECT count(*) FROM embedding_cache"))).scalar()
-        repo_status = (
+        repo = (
             await db.execute(
-                text("SELECT status FROM repositories WHERE id = :i"), {"i": repo_id}
+                text("SELECT status, ingestion_phase, ingestion_total_chunks "
+                     "FROM repositories WHERE id = :i"),
+                {"i": repo_id},
             )
-        ).scalar()
+        ).one()
         print(f"chunks: {n_chunks}  with vectors: {n_embedded}  "
-              f"cache rows: {n_cache}  repo status: {repo_status}")
+              f"cache rows: {n_cache}  repo status: {repo.status}")
+        print(f"progress fields: phase={repo.ingestion_phase} "
+              f"counter={repo.ingestion_total_chunks}")
         if n_chunks == 0 or n_embedded != n_chunks:
             print("FAIL: chunks missing vectors")
+            return 1
+        # The dashboard reads these. They were never written, so the whole
+        # progress panel stayed blank for the length of the run.
+        if repo.ingestion_phase != "done" or repo.ingestion_total_chunks != n_chunks:
+            print("FAIL: progress fields not published for the UI")
             return 1
 
         # --- retrieval against what was just indexed ----------------------
