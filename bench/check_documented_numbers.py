@@ -45,6 +45,10 @@ def colocated(label: str, field: str) -> float:
     raise KeyError(label)
 
 
+def repro(config: str, metric: str) -> float:
+    return load("eval_reproducibility.json")["configs"][config][metric]["spread"]
+
+
 def batch(size: int, field: str) -> float:
     for row in load("embed_batch.json")["results"]:
         if row["batch"] == size:
@@ -143,6 +147,19 @@ CHECKS: list[tuple[str, str, float, float]] = [
      batch(16, "median_hold_s"), 0.005),
     ("backend/app/config.py", "batch  1   2.45 chunks/s   median hold 0.25s",
      batch(1, "median_hold_s"), 0.005),
+
+    # --- eval reproducibility: the caveat on the last digit ---------------
+    ("BENCHMARKS.md", "| dense only | recall@10 | 0.0067 |",
+     repro("dense only", "recall@10"), 0.00005),
+    ("BENCHMARKS.md", "| hybrid w=.5,.1,2 | recall@10 | 0.0033 |",
+     repro("hybrid w=.5,.1,2", "recall@10"), 0.00005),
+    ("BENCHMARKS.md", "| ROUTED | MRR | 0.0008 |",
+     repro("ROUTED (shipping)", "mrr"), 0.00005),
+    # The control: it must be exactly zero, or the isolation argument fails.
+    ("BENCHMARKS.md", "| **symbol only** | *every metric* | **0.0000** |",
+     repro("symbol only", "recall@10"), 0.0),
+    ("BENCHMARKS.md", "| **lexical only** | *every metric* | **0.0000** |",
+     repro("lexical only", "mrr"), 0.0),
 ]
 
 
