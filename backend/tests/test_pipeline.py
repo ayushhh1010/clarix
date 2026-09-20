@@ -13,11 +13,10 @@ in test_embedder.py.
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
-import numpy as np
 import pytest
+from _fakes import FakeEmbedder
 from sqlalchemy import text
 
 from app.indexing.chunker import ASTChunker
@@ -29,28 +28,6 @@ from app.indexing.pipeline import (
 )
 
 REPO = "cccc0000-0000-4000-8000-000000000003"
-DIM = 768
-
-
-class FakeEmbedder:
-    """Deterministic unit vectors derived from the text; no model needed."""
-
-    def __init__(self):
-        self.calls = 0
-        self.texts_embedded = 0
-        self.max_batch_seen = 0
-
-    def embed(self, texts, batch_size=16, sort_by_length=True):
-        self.calls += 1
-        self.texts_embedded += len(texts)
-        self.max_batch_seen = max(self.max_batch_seen, len(texts))
-        out = np.empty((len(texts), DIM), dtype=np.float32)
-        for i, t in enumerate(texts):
-            seed = int(hashlib.sha256(t.encode()).hexdigest()[:8], 16)
-            rng = np.random.default_rng(seed)
-            v = rng.normal(size=DIM).astype(np.float32)
-            out[i] = v / np.linalg.norm(v)
-        return out
 
 
 @pytest.fixture

@@ -763,18 +763,31 @@ Fixed in two independent layers, so neither is load-bearing alone:
   parent directory lets an ordinary-looking file escape, which a
   per-file symlink test would pass.
 
-Demonstrated rather than argued. A directory junction -- which
-`is_symlink()` reports as **False**, so the symlink check does not catch
-it -- was placed in a checkout pointing at an outside directory:
+Demonstrated rather than argued, on both platforms, by removing each
+guard and observing what gets indexed.
 
-| walker | file from outside the checkout |
+**Linux** (WSL Ubuntu, Python 3.12 -- where the vulnerability is
+reachable, because that is where git materialises symlinks):
+
+| walker | file the symlink points at, outside the checkout |
+|---|---|
+| symlink check removed | **indexed** |
+| as shipped | not indexed |
+
+**Windows**, using a directory junction -- which `is_symlink()` reports as
+**False**, so the symlink check cannot see it:
+
+| walker | file under the junction, outside the checkout |
 |---|---|
 | containment check removed | **indexed** |
 | as shipped | not indexed |
 
-That is the second layer catching what the first cannot. Three further
-tests cover real symlinks, including a symlinked parent, and run on Linux
-where the vulnerability is reachable.
+The two checks are not redundant, and the difference is instructive. On
+Linux the symlinked-*directory* case is already safe without the
+containment check, because CPython's `rglob` does not descend into
+directory symlinks. A junction is not a symlink, `rglob` walks straight
+into it, and only resolving against the root stops it. Each guard covers
+a case the other misses.
 
 ## 10. Open defect: index/metadata state split
 

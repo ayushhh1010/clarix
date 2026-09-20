@@ -11,12 +11,12 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from _fakes import FakeEmbedder
 from sqlalchemy import text
 
 from app.indexing import queue
 from app.indexing.chunker import ASTChunker
 from app.indexing.worker import WorkerConfig, run_once, run_worker
-from tests.test_pipeline import FakeEmbedder
 
 REPO = "dddd0000-0000-4000-8000-000000000004"
 

@@ -105,7 +105,16 @@ dev = [
     # PostgreSQL 18.6 + pgvector 0.8.6 as a wheel. The schema and retrieval
     # tests run real SQL against a real server; a suite that needs a Docker
     # daemon is a suite that gets skipped.
-    "embedded-postgres==18.6.1",
+    #
+    # 18.6.3, not 18.6.1: on 18.6.1 the server terminates abnormally on
+    # `SELECT binary_quantize('[...]'::vector(768))`, which the schema
+    # depends on, so tests/test_migrations.py takes the connection down with
+    # it. Reproduced deterministically in a clean environment.
+    #
+    # This pin was wrong and local runs did not notice, because the working
+    # venv happened to hold 18.6.3 while the declared version was 18.6.1 --
+    # the suite was passing against a build the project did not specify.
+    "embedded-postgres==18.6.3",
 ]
 
 [build-system]
@@ -153,10 +162,6 @@ ignore = ["E501", "B008"]
 # Routers are imported after `app` is constructed to avoid a circular
 # import; E402 is the cost of that ordering.
 "app/main.py" = ["E402"]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
 
 [tool.mypy]
 python_version = "3.11"
