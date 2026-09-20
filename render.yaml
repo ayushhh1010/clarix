@@ -20,8 +20,17 @@ services:
     rootDir: backend
     plan: free
     buildCommand: pip install .
-    preDeployCommand: alembic upgrade head
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    # Migrations run here, not in `preDeployCommand`, because Render does
+    # not support a pre-deploy command on the free plan -- the Blueprint is
+    # rejected outright with "pre-deploy command is not supported for free
+    # tier services".
+    #
+    # Chaining onto the start command is the next best thing: `alembic
+    # upgrade head` is idempotent, so a cold start on an already-current
+    # database is a no-op, and a failed migration stops the service from
+    # coming up rather than serving against a schema it does not match.
+    # Only the API does this; the indexer must not race it.
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
