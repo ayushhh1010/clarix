@@ -185,14 +185,22 @@ async def complete(db: AsyncSession, job_id: int) -> None:
     await db.commit()
 
 
-async def fail(db: AsyncSession, job: Job, error: str) -> str:
+async def fail(
+    db: AsyncSession, job: Job, error: str, *, permanent: bool = False
+) -> str:
     """
     Record a failure and either schedule a retry or dead-letter the job.
 
     Returns the resulting status. Dead-lettered jobs stay in the table:
     a silently vanished job is indistinguishable from one that never ran.
+
+    `permanent` dead-letters immediately, for failures that cannot succeed
+    on a retry -- a URL with a forbidden scheme, a job kind with no handler.
+    Without it, `worker.py` was retrying unsafe URLs three times with
+    backoff despite a comment claiming they were not retryable, which
+    delayed the error the user actually needs to see and did nothing else.
     """
-    exhausted = job.attempts >= job.max_attempts
+    exhausted = permanent or job.attempts >= job.max_attempts
     status = "dead" if exhausted else "queued"
     delay = RETRY_BACKOFF[min(job.attempts - 1, len(RETRY_BACKOFF) - 1)]
 

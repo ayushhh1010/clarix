@@ -19,9 +19,8 @@ def main() -> int:
                     help="cap the set; every unique symbol x 4 templates is a lot")
     args = ap.parse_args()
 
-    from bench_quantization import collect_chunks
-
     from app.evaluation.dataset import build_symbol_lookup, split, write_jsonl
+    from bench_quantization import collect_chunks
 
     chunks = collect_chunks(100_000)
     by_repo: dict[str, list] = {}

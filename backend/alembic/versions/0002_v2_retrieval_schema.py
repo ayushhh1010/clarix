@@ -25,12 +25,45 @@ depends_on = None
 EMBED_DIM = 768
 
 
+# `halfvec` and `binary_quantize` were both added in pgvector 0.7.0
+# (2024-04-29); `bit` indexing arrived in the same release. Everything this
+# migration creates depends on them, and nothing here needs 0.8 -- iterative
+# index scans are not used.
+MIN_PGVECTOR = (0, 7, 0)
+
+
+def _check_pgvector_version() -> None:
+    """
+    Fail early, and legibly, on a pgvector too old for this schema.
+
+    Without this the migration gets as far as `CREATE TABLE ... halfvec(768)`
+    and dies on `type "halfvec" does not exist`, which reads like a typo
+    rather than a version problem. Managed providers pin their own pgvector
+    build, so this is the failure a first deploy is most likely to hit.
+    """
+    installed = op.get_bind().exec_driver_sql(
+        "SELECT extversion FROM pg_extension WHERE extname = 'vector'"
+    ).scalar()
+    if installed is None:  # pragma: no cover - CREATE EXTENSION just ran
+        raise RuntimeError("the `vector` extension is not installed")
+
+    numeric = [int(p) for p in installed.split(".")[:3] if p.isdigit()]
+    if tuple(numeric) < MIN_PGVECTOR:
+        raise RuntimeError(
+            f"pgvector {installed} is too old: this schema needs "
+            f"{'.'.join(map(str, MIN_PGVECTOR))} or newer for halfvec and "
+            f"binary_quantize. Upgrade the extension, or the server if it "
+            f"does not offer a newer build."
+        )
+
+
 def upgrade() -> None:
     # --- extensions -------------------------------------------------------
     # Supabase, Neon and the embedded test server all ship these; CREATE
     # EXTENSION is idempotent and safe to re-run.
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
     op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+    _check_pgvector_version()
 
     # --- lexical tokenisation --------------------------------------------
     #

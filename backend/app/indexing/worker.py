@@ -53,7 +53,17 @@ class WorkerConfig:
 
 
 class JobFailure(Exception):
-    """A job failed for a reason the user should see."""
+    """A job failed for a reason the user should see. Retryable."""
+
+
+class PermanentJobFailure(JobFailure):
+    """
+    A job failed in a way a retry cannot fix.
+
+    A forbidden URL scheme will still be forbidden in thirty seconds, and a
+    job kind with no handler will still have none. Retrying these three
+    times with backoff only delays the error the user needs to see.
+    """
 
 
 async def _repo_row(db: AsyncSession, repo_id: str):
@@ -81,7 +91,7 @@ async def handle_full_index(
         logger.info("repo %s no longer exists; job %s is a no-op", job.repo_id[:8], job.id)
         return {"skipped": "repository deleted"}
     if not repo.url:
-        raise JobFailure("repository has no URL to clone")
+        raise PermanentJobFailure("repository has no URL to clone")
 
     force = bool(job.payload.get("force"))
     # Cheapest possible incremental check: if the remote head already
@@ -110,7 +120,7 @@ async def handle_full_index(
     try:
         validate_url(repo.url)
     except UnsafeSourceError as exc:
-        raise JobFailure(str(exc)) from exc
+        raise PermanentJobFailure(str(exc)) from exc
 
     config.workdir.mkdir(parents=True, exist_ok=True)
     dest = Path(tempfile.mkdtemp(prefix="clarix_src_", dir=str(config.workdir)))
@@ -119,7 +129,7 @@ async def handle_full_index(
             checkout = clone(repo.url, dest / "repo", ref=job.payload.get("ref"))
         except UnsafeSourceError as exc:
             # Not retryable: the URL will still be unsafe next time.
-            raise JobFailure(str(exc)) from exc
+            raise PermanentJobFailure(str(exc)) from exc
         except SourceError as exc:
             raise JobFailure(f"clone failed: {exc}") from exc
 
@@ -193,11 +203,16 @@ async def run_once(
 
     handler = HANDLERS.get(job.kind)
     if handler is None:
-        await queue.fail(db, job, f"no handler for job kind {job.kind!r}")
+        await queue.fail(
+            db, job, f"no handler for job kind {job.kind!r}", permanent=True
+        )
         return True
 
     try:
         result = await handler(db, job, config, embedder, chunker)
+    except PermanentJobFailure as exc:
+        await db.rollback()
+        await queue.fail(db, job, str(exc), permanent=True)
     except JobFailure as exc:
         await db.rollback()
         await queue.fail(db, job, str(exc))

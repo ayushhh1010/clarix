@@ -297,28 +297,74 @@ So the ingestion path uses pgvector's SQL `binary_quantize()` directly. The
 centroid argument is kept as a hedge for a future model swap, with the claim
 in its docstring corrected to say it was tested and found unnecessary.
 
-## 6. Embedding throughput -- 3.86x, measured, free
+## 6. Embedding throughput, and a claim that was inverted
 
-The first measurement of the fp32 embedder was **0.90 chunks/sec**; indexing
-the 3,601-chunk corpus took 53-67 minutes. That is not a viable ingestion
-time, and on Modal -- billed per second -- it is the dominant cost of the
-whole pipeline.
-
-### Model variant (`bench/bench_embed_model.py`, 400 chunks)
+### Model variant (`bench/bench_embed_model.py`, 400 chunks, batch 16)
 
 fp32 output is the reference; each variant is scored as a retrieval index
 against fp32's own top-10, because a faster encoder that reorders results is
 not a win.
 
+**This section previously reported fp16 as a free 1.36x speedup. That was
+wrong, and the correction is the interesting part.** Re-run at identical
+settings:
+
 | variant | chunks/sec | speedup | recall@10 vs fp32 | mean cos to fp32 |
 |---|---:|---:|---:|---:|
-| fp32 | 0.90 | 1.00x | 100.0% | 1.0000 |
-| **fp16** | **1.22** | **1.36x** | **100.0%** | **1.0000** |
-| int8 | 1.89 | 2.10x | 91.0% | 0.9809 |
+| fp32 | 5.21 | 1.00x | 100.0% | 1.0000 |
+| **fp16** | **3.94** | **0.76x** | **100.0%** | **1.0000** |
+| int8 | 9.70 | 1.86x | 90.5% | 0.9831 |
 
-fp16 is free and is now the default. **int8 is not free** -- 9% of top-10
-results change -- and is a lever to pull only if throughput becomes critical
-*and* that 9% is shown not to matter end to end.
+fp16 is **24% slower** than fp32, not 36% faster. The original run recorded
+fp32 0.90 and fp16 1.22 chunks/sec.
+
+Three things say the new numbers are the trustworthy ones. The result is
+order-independent -- running fp16 first gives fp16 3.40 / fp32 4.51, running
+fp32 first gives fp32 4.84 / fp16 3.46, so it is not the warm-up artifact
+that produced a retracted chunker claim earlier in this file. int8's ratio
+reproduced almost exactly (1.86x against 1.89x, recall 90.5% against 91.0%),
+so the harness itself is sound. And the mechanism is known: CPUs have no
+native fp16 kernels, so ONNX Runtime inserts Cast nodes around fp16 weights.
+fp16 wins only where memory bandwidth rather than compute is the limit.
+
+The original absolute throughput was ~5.8x lower than today's on the same
+code, which is what a bandwidth-starved or heavily loaded machine looks like
+-- the regime where fp16 does win. So the old number was probably real on
+the machine that produced it, and wrong as a general claim. **The lesson is
+that a ratio measured once on one machine is not a property of the model.**
+
+### fp16 still ships, for memory rather than speed
+
+| model | peak RSS (arena off) | chunks/sec | query latency |
+|---|---:|---:|---:|
+| **fp16** | **439 MB** | 2.33 | 99 ms |
+| fp32 | 734 MB | 3.24 | 21 ms |
+
+Only fp16 fits a 512 MB instance. The 1.4x throughput and the faster query
+are real and are being paid for deployability, which is the honest framing:
+fp16 is not free, it is the cheaper of two things that do not both fit.
+
+**int8 is separately not free** -- 9.5% of top-10 results change -- and is a
+lever to pull only if throughput becomes critical *and* that loss is shown
+not to matter end to end.
+
+### ONNX Runtime's memory arena dominates everything
+
+Measured on 200 real chunks, fp16, batch 16 (`bench/bench_colocated_rss.py`):
+
+| arena | peak RSS | chunks/sec | query latency |
+|---|---:|---:|---:|
+| on (ORT default) | 1,809 MB | 3.40 | 55 ms |
+| **off** | **439 MB** | 2.33 | 99 ms |
+
+The arena pre-allocates and never returns memory, and it costs more than the
+model does. There is no middle setting: `arena_extend_strategy` changed
+nothing measurable, and disabling `mem_pattern` only reached 835 MB. So the
+choice is 439 MB or it does not deploy, and `OnnxEmbedder` defaults the arena
+off for that reason.
+
+This is why the throughput figures below, measured with the arena at its
+default, overstate what the deployed indexer achieves by roughly 1.6x.
 
 ### Length-sorted batching
 
@@ -349,16 +395,34 @@ embeds a short text alone and again in a padded batch and requires
 cos > 0.9999. Without that guarantee, reordering would silently change
 every vector.
 
-### Combined
+### Combined -- the 3.86x figure is retracted
 
-| | chunks/sec | 3,601-chunk repo |
-|---|---:|---:|
-| fp32, arrival order (starting point) | 0.90 | 66.7 min |
-| fp16, length-sorted | **3.47** | **17.3 min** |
-| **improvement** | **3.86x** | |
+This section used to claim **3.86x**, by multiplying the length-sorting win
+(2.75x, real) by the fp16 win (1.36x, inverted -- see above). Only one of
+those factors survives measurement.
 
-No quality cost at any step. The remaining cost is CPU-bound on 2 effective
-cores; more cores are the next lever and are what the indexer host provides.
+What stands:
+
+| change | speedup | evidence |
+|---|---:|---|
+| length-sorted batching | **2.75x** | within-run A/B, same process, same weights |
+| fp16 over fp32 | 0.76x | slower; kept for memory, not speed |
+| arena off (required to deploy) | 0.64x | the price of fitting 512 MB |
+
+Length-sorting is the one durable throughput win here, and it is the most
+trustworthy number in this section because it is a within-run A/B: both arms
+ran in one process against the same weights, so the cross-run machine
+variance that inverted the fp16 comparison cannot affect it. It is also
+free in quality terms -- minimum cosine 1.000000 across all 400 chunks.
+
+The deployed configuration is fp16 with the arena off and sorting on, which
+measures **2.33 chunks/sec** on real chunks -- not the 3.47 previously
+quoted, because that figure was taken with the arena at its default and the
+arena cannot be afforded. At 2.39/sec the 3,601-chunk corpus indexes in
+about 26 minutes.
+
+The remaining cost is CPU-bound on 2 effective cores; more cores are the
+next lever, and unlike precision they do not trade against memory.
 
 ### Pooling correctness, verified rather than assumed
 
@@ -526,7 +590,110 @@ that should not be read as real even when the within-run CI excludes zero.
 actually ask questions. These are instruments for comparing systems and
 catching regressions, not estimates of production quality.
 
-## 8. Open defect: index/metadata state split
+## 8. Deployment topology, and why the dense arm was off
+
+### The endpoint nobody served
+
+`query_embedder.py` embeds the query by POSTing to `EMBEDDING_ENDPOINT`,
+so the API never loads a model. Nothing in the repository served that
+endpoint. So the setting was always empty, `embed_query` always returned
+None, and **the dense arm was disabled in every real deployment** -- which
+made the two-stage vector search in sections 4-5 and the routing win in
+section 7 unreachable.
+
+Nothing failed. The client degrades on purpose, and both sides passed their
+own unit tests: the client handled a well-formed response, and the endpoint
+did not exist to be tested. Only a test spanning the seam catches this, and
+`tests/test_indexer_service.py` now runs the real `HttpQueryEmbedder`
+against the real ASGI app.
+
+### Where the model should live
+
+`bench/bench_colocated_rss.py`, 200 real chunks, against a 512 MB cap:
+
+| configuration | peak RSS | chunks/s | query | fits |
+|---|---:|---:|---:|:--:|
+| API alone | 59.1 MB | - | - | yes |
+| **indexer: fp16, arena off** | **439 MB** | 2.33 | 99 ms | **yes** |
+| indexer + API in one process | 485 MB | 2.24 | 98 ms | 27 MB spare |
+| fp16, arena on | 1,809 MB | 3.40 | 55 ms | no |
+| fp32, arena off | 734 MB | 3.24 | 21 ms | no |
+
+Colocating the API with the model *technically* fits, at 27 MB of headroom.
+That is not enough to serve requests under load, so the model lives with
+the worker instead -- which costs nothing extra, because the worker already
+holds it.
+
+Verified end to end against the running service: a query embedded over HTTP
+is **byte-identical** to what the ingestion path stores for the same text,
+both the `halfvec` literal and the 768-bit string. Query latency through
+the endpoint is **p50 103 ms, p95 118 ms**, which is immaterial next to
+seconds of generation.
+
+### Batching buys nothing, and costs query latency
+
+The indexer shares one model between the worker and the query endpoint, so
+the worker's batch size sets the worst case a query can wait. The usual
+assumption is that bigger batches are faster. With the arena off they are
+not (`bench/bench_embed_batch.py`, 200 real chunks):
+
+| batch | chunks/s | median hold | p95 hold | max hold |
+|---:|---:|---:|---:|---:|
+| **1** | **2.43** | **0.25 s** | **1.15 s** | 2.18 s |
+| 4 | 2.43 | 1.05 s | 4.24 s | 8.13 s |
+| 8 | 2.49 | 1.95 s | 8.51 s | 15.33 s |
+| 16 | 2.32 | 4.97 s | 16.74 s | 18.07 s |
+
+Throughput varies by **7%** across a 16x range of batch sizes -- noise --
+while hold time scales linearly, 20x from batch 1 to batch 16. The
+mechanism is padding: every sequence in a batch is padded to the longest in
+it, and a batch of one is never padded. Length-sorting recovers most of
+that within a batch (2.75x, section 6) but cannot beat not padding at all.
+
+So `INDEXER_EMBED_BATCH` defaults to 1. Reproduced three times on
+independent runs, including once at n=96.
+
+This also qualifies section 6: the length-sorting result is real, but it is
+a fix for a cost that batching itself introduces. At batch 1 the cost does
+not exist.
+
+### What running it for the first time found
+
+The worker had an entrypoint for the first time in this change, so it also
+ran for the first time. Two things surfaced immediately that no unit test
+had caught.
+
+The clone guard works: a `file://` URL was rejected with "scheme not
+permitted" before any temp directory was allocated. That is the intended
+behaviour and it is good to have seen it fire on a real job rather than
+only in a test.
+
+But the job went back to **`queued`** for retry. `worker.py` carried a
+comment reading "Not retryable: the URL will still be unsafe next time",
+and the behaviour did not match it -- `queue.fail` had no permanent-failure
+path, so an unsafe URL burned three attempts with backoff before
+dead-lettering. The test covering it asserted only the error *message*, not
+the status, which is why the comment and the code could disagree
+indefinitely.
+
+Fixed with an explicit `PermanentJobFailure`, and the existing test now
+asserts the status. A test that checks the error text but not the outcome
+is a test that documents a behaviour without constraining it.
+
+### Concurrency
+
+ONNX Runtime's documentation and its issue tracker disagree about whether
+concurrent `Run()` on one session is safe. `SharedEmbedder` serialises
+access rather than betting on the optimistic reading -- correct either way
+-- and takes the lock per sub-batch so a query waits at most one batch.
+
+The worker cannot share the server's event loop, because the pipeline's
+`embedder.embed()` is synchronous and would block every other request for
+the length of a batch. It runs on its own thread with its own loop, and
+`tests/test_indexer_service.py` asserts `/health` stays responsive while an
+embed is in flight.
+
+## 9. Open defect: index/metadata state split
 
 Not a benchmark — a bug found by reading `render.yaml` against `config.py`.
 

@@ -1,12 +1,78 @@
+# Render blueprint: two services, because they have different shapes.
+#
+#   api      thin, always-on, 59.1 MB import RSS. Holds no model.
+#   indexer  holds the ONNX model. 439 MB peak RSS, measured
+#            (bench/bench_colocated_rss.py). Serves /embed for the API's
+#            query path and runs the indexing worker.
+#
+# They are separate because colocating them peaks at 485 MB on a 512 MB
+# instance -- 27 MB of headroom, which is no room to serve requests. The indexer is
+# sized right at the limit even alone: 439 MB of 512 MB, ~73 MB headroom.
+#
+# Both install from pyproject.toml. There is no requirements.txt: it had
+# drifted to the v1 dependency set (chromadb, langgraph, redis) that nothing
+# imports any more, so a deploy installed ~300 MB of dead weight and missed
+# what v2 needs.
 services:
   - type: web
-    name: clarix
+    name: clarix-api
     runtime: python
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    plan: free
+    buildCommand: pip install .
+    preDeployCommand: alembic upgrade head
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0
-      - key: GIT_PYTHON_REFRESH
-        value: quiet
+        value: "3.11"
+      - key: APP_ENV
+        value: production
+      # Point the API at the indexer's embedding endpoint. Without this the
+      # dense retrieval arm is disabled and only lexical + symbol run.
+      - key: EMBEDDING_ENDPOINT
+        fromService:
+          name: clarix-indexer
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: EMBEDDING_API_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+
+  - type: web
+    name: clarix-indexer
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install '.[indexer]'
+    startCommand: python -m app.indexing --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: APP_ENV
+        value: production
+      # Must match the API's EMBEDDING_API_KEY. The endpoint runs a model on
+      # caller-supplied text, and app.indexing.service refuses to start in
+      # production without it.
+      - key: EMBEDDING_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      # Cache the model between deploys so a restart does not re-download
+      # 306 MB before it can answer.
+      - key: HF_HOME
+        value: /opt/render/project/.cache/huggingface

@@ -49,7 +49,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.indexing.chunker import ASTChunker, Chunk
-from app.indexing.embedder import EMBED_DIM, binary_quantize, bits_to_sql
+from app.indexing.embedder import (
+    EMBED_DIM,
+    binary_quantize,
+    bits_to_sql,
+    vector_to_sql,
+)
 from app.indexing.languages import is_prose, language_name_for_path
 
 logger = logging.getLogger(__name__)
@@ -271,10 +276,6 @@ def _chunk_params(chunk: Chunk, repo_id: str, index_version: int) -> dict:
     }
 
 
-def _vector_literal(vec: np.ndarray) -> str:
-    return "[" + ",".join(f"{x:.6f}" for x in vec) + "]"
-
-
 async def _flush_batch(
     db: AsyncSession,
     batch: list[Chunk],
@@ -325,7 +326,7 @@ async def _flush_batch(
                 {
                     "model_id": model_id,
                     "content_sha": sha,
-                    "embedding": _vector_literal(matrix[i]),
+                    "embedding": vector_to_sql(matrix[i]),
                     "bits": bits_to_sql(packed[i], EMBED_DIM),
                 }
                 for i, sha in enumerate(shas_order)
@@ -337,7 +338,7 @@ async def _flush_batch(
         params = _chunk_params(chunk, repo_id, index_version)
         if chunk.content_sha in vectors:
             vec = vectors[chunk.content_sha]
-            params["embedding"] = _vector_literal(vec)
+            params["embedding"] = vector_to_sql(vec)
             params["bits"] = bits_to_sql(
                 binary_quantize(vec.reshape(1, -1))[0], EMBED_DIM
             )

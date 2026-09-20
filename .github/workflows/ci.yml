@@ -1,0 +1,127 @@
+# CI for clarix.
+#
+# The repository's central claim is that its numbers are measured rather
+# than asserted, so the pipeline checks three separate things:
+#
+#   lint      ruff, the same rules the project is written under
+#   test      the full suite against a real PostgreSQL with pgvector,
+#             supplied by the `embedded-postgres` wheel -- no service
+#             container, no Docker daemon
+#   numbers   every figure quoted in a docstring or in BENCHMARKS.md is
+#             re-derived from the JSON artifact it came from
+#
+# The last one exists because six documented numbers went stale at once
+# when the evaluation sets were regenerated, and two others turned out to
+# have been rounded into claims that were not true. Prose drifting from
+# artifacts is the failure this project can least afford.
+name: CI
+
+on:
+  push:
+    branches: [main, "rearch/**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          # requirements.txt is gone and pyproject.toml is not at the
+          # repository root, so the default lookup would find nothing.
+          cache-dependency-path: backend/pyproject.toml
+      - name: Install ruff
+        run: pip install ruff==0.13.2
+      - name: Lint application, migrations and tests
+        working-directory: backend
+        run: ruff check app alembic tests --output-format=github
+      - name: Lint benchmarks
+        run: ruff check bench --output-format=github
+
+  numbers:
+    # No dependencies at all: this reads committed JSON artifacts and the
+    # prose that cites them.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Documented numbers match their artifacts
+        run: python bench/check_documented_numbers.py
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          # requirements.txt is gone and pyproject.toml is not at the
+          # repository root, so the default lookup would find nothing.
+          cache-dependency-path: backend/pyproject.toml
+
+      # The embedder tests need the real ONNX weights (306 MB). Cached so
+      # only the first run on a given model pays for the download; they
+      # skip cleanly if it is unavailable rather than failing.
+      - name: Cache Hugging Face model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ runner.os }}-jina-v2-base-code-fp16
+
+      - name: Install
+        working-directory: backend
+        run: pip install '.[dev,indexer,eval,compat-tests]'
+
+      - name: Run tests
+        working-directory: backend
+        run: pytest -q --maxfail=1
+
+      # A green suite that skipped everything looks identical to a green
+      # suite that ran. This asserts the count did not collapse.
+      - name: Assert the suite actually ran
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          count=$(pytest --collect-only -q 2>/dev/null | tail -1 | grep -oE '^[0-9]+' || echo 0)
+          echo "collected $count tests"
+          if [ "$count" -lt 380 ]; then
+            echo "::error::only $count tests collected; expected at least 380"
+            exit 1
+          fi
+
+  package:
+    # The repository was once not installable: `import app.main` failed on
+    # its own declared dependencies. This installs the base set alone --
+    # no dev, no indexer -- and imports the API exactly as the web process
+    # does, which is the only way that regression shows up.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          # requirements.txt is gone and pyproject.toml is not at the
+          # repository root, so the default lookup would find nothing.
+          cache-dependency-path: backend/pyproject.toml
+      - name: Install base dependencies only
+        working-directory: backend
+        run: pip install .
+      - name: Import the API with no optional extras present
+        working-directory: backend
+        run: python -c "import app.main; print('app.main imports cleanly')"

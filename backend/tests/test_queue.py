@@ -168,6 +168,45 @@ async def test_failure_requeues_with_backoff(async_session, repo):
     assert await claim(async_session) is None
 
 
+async def test_permanent_failure_dead_letters_on_the_first_attempt(
+    async_session, repo
+):
+    """
+    Some failures cannot be fixed by waiting: a forbidden URL scheme, a job
+    kind with no handler. Retrying those three times with backoff only
+    delays the error the user needs to see.
+    """
+    await enqueue(async_session, repo, "full_index")
+    await async_session.commit()
+    job = await claim(async_session)
+    assert job.attempts == 1
+    assert job.attempts < job.max_attempts, "attempts are not yet exhausted"
+
+    status = await fail(async_session, job, "scheme not permitted", permanent=True)
+    assert status == "dead"
+
+    row = (
+        await async_session.execute(
+            text("SELECT status, last_error FROM ingest_jobs WHERE id = :i"),
+            {"i": job.id},
+        )
+    ).one()
+    assert row.status == "dead"
+    assert "not permitted" in row.last_error
+    # A dead job must not be claimable again.
+    assert await claim(async_session) is None
+
+
+async def test_retryable_failure_still_retries_when_attempts_remain(
+    async_session, repo
+):
+    """The permanent flag must not change the default path."""
+    await enqueue(async_session, repo, "full_index")
+    await async_session.commit()
+    job = await claim(async_session)
+    assert await fail(async_session, job, "network blip", permanent=False) == "queued"
+
+
 async def test_job_is_dead_lettered_after_max_attempts(async_session, repo):
     await enqueue(async_session, repo, "full_index")
     await async_session.commit()

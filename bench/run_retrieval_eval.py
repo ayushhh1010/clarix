@@ -160,7 +160,7 @@ def load_index(raw_url: str, repo_id: str, chunks: list, vectors: np.ndarray,
         # per-insert is materially slower.
         cur.execute("DROP INDEX IF EXISTS ix_chunks_bits_hnsw")
 
-        for chunk, vec, content in zip(chunks, vectors, contents):
+        for chunk, vec, content in zip(chunks, vectors, contents, strict=True):
             cur.execute(
                 f"""
                 INSERT INTO chunks (chunk_id, repo_id, content_sha, file_path,
@@ -197,7 +197,7 @@ async def run_config(session, repo_id: str, examples, query_vecs, name: str,
     result = RunResult(system=name)
     arm_yield: dict[str, int] = {}
 
-    for ex, qvec in zip(examples, query_vecs):
+    for ex, qvec in zip(examples, query_vecs, strict=True):
         t0 = time.perf_counter()
         hits, trace = await hybrid_search(
             session, repo_id, ex.query,
@@ -220,11 +220,10 @@ async def run_config(session, repo_id: str, examples, query_vecs, name: str,
 
 
 async def main_async(args) -> int:
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
     from app.evaluation.dataset import read_jsonl, strip_docstring
     from app.evaluation.metrics import holm_bonferroni, paired_bootstrap
     from bench_quantization import collect_chunks
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     suffix = "" if args.split == "all" else f"_{args.split}"
     eval_path = (BENCH_DIR.parent / "backend" / "eval_data"
@@ -255,7 +254,7 @@ async def main_async(args) -> int:
         print("  docstrings KEPT (leakage measurement run)")
     else:
         contents = [strip_docstring(c.content, c.language) for c in chunks]
-        changed = sum(1 for c, s in zip(chunks, contents) if c.content != s)
+        changed = sum(1 for c, s in zip(chunks, contents, strict=True) if c.content != s)
         print(f"  docstrings stripped from {changed:,} chunks")
 
     tag = "keep" if args.keep_docstrings else "strip"

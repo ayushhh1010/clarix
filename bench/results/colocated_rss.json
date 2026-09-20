@@ -1,0 +1,63 @@
+{
+  "budget_mb": 512.0,
+  "chunks": 200,
+  "results": [
+    {
+      "model": "onnx/model_fp16.onnx",
+      "arena": false,
+      "with_api": false,
+      "load_seconds": 2.0,
+      "after_load_mb": 430.6,
+      "after_warm_mb": 432.3,
+      "chunks": 200,
+      "chunks_per_sec": 2.33,
+      "after_batch_mb": 439.0,
+      "query_ms": 99.0,
+      "peak_mb": 439.0,
+      "label": "fp16, arena off"
+    },
+    {
+      "model": "onnx/model_fp16.onnx",
+      "arena": true,
+      "with_api": false,
+      "load_seconds": 2.03,
+      "after_load_mb": 448.1,
+      "after_warm_mb": 887.0,
+      "chunks": 200,
+      "chunks_per_sec": 3.4,
+      "after_batch_mb": 1808.6,
+      "query_ms": 54.5,
+      "peak_mb": 1808.6,
+      "label": "fp16, arena on"
+    },
+    {
+      "model": "onnx/model.onnx",
+      "arena": false,
+      "with_api": false,
+      "load_seconds": 2.17,
+      "after_load_mb": 727.2,
+      "after_warm_mb": 729.1,
+      "chunks": 200,
+      "chunks_per_sec": 3.24,
+      "after_batch_mb": 733.0,
+      "query_ms": 20.8,
+      "peak_mb": 734.3,
+      "label": "fp32, arena off"
+    },
+    {
+      "model": "onnx/model_fp16.onnx",
+      "arena": false,
+      "with_api": true,
+      "api_only_mb": 59.1,
+      "load_seconds": 1.82,
+      "after_load_mb": 476.3,
+      "after_warm_mb": 478.4,
+      "chunks": 200,
+      "chunks_per_sec": 2.24,
+      "after_batch_mb": 485.3,
+      "query_ms": 98.3,
+      "peak_mb": 485.3,
+      "label": "fp16, arena off + API"
+    }
+  ]
+}

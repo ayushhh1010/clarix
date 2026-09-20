@@ -96,7 +96,7 @@ def embed_corpus(chunks, batch: int) -> np.ndarray:
 
 def recall_at_k(truth: np.ndarray, got: np.ndarray, k: int) -> float:
     """Mean overlap between two (queries, k) index matrices."""
-    hits = sum(len(set(t[:k]) & set(g[:k])) for t, g in zip(truth, got))
+    hits = sum(len(set(t[:k]) & set(g[:k])) for t, g in zip(truth, got, strict=True))
     return hits / (len(truth) * k)
 
 

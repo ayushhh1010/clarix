@@ -23,9 +23,8 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=100_000)
     args = ap.parse_args()
 
-    from bench_quantization import collect_chunks
-
     from app.evaluation.dataset import BuildStats, build_from_chunks, split, write_jsonl
+    from bench_quantization import collect_chunks
 
     chunks = collect_chunks(args.limit)
     print(f"{len(chunks):,} chunks from the corpus")
