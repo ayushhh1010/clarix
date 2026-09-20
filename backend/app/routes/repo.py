@@ -1,34 +1,63 @@
 """
-Repository routes — upload / clone repos, check status, list files.
-All routes are scoped to the currently authenticated user.
+Repository routes.
+
+Rewritten onto the v2 indexing path. Three behavioural changes, each fixing
+something measured or observed:
+
+  Queued, not backgrounded. v1 used FastAPI `BackgroundTasks`, which dies
+  with the process: a spin-down mid-ingest left the repository in
+  `status='ingesting'` for ever, with no retry. The row and its job are now
+  inserted in one transaction, so neither can exist without the other, and
+  a worker that dies has its job reclaimed.
+
+  The URL is validated at submission. v1 accepted any string and discovered
+  problems inside the background task, where the user never saw them.
+  `ext::sh -c ...` is a remote code execution primitive, so it is rejected
+  at the API boundary with a 400 rather than deep in a worker.
+
+  File content comes from the forge, pinned to the indexed commit. v1 read
+  from `local_path` on the worker's disk; on an ephemeral filesystem that
+  path was dangling after every restart, so the viewer 404'd for
+  repositories the API simultaneously reported as `ready`. Nothing is
+  stored, and what is displayed is exactly what was indexed.
 """
+
+from __future__ import annotations
 
 import logging
 import uuid
-from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.content import ContentError, build_tree, fetch_file
 from app.database import get_db
+from app.indexing import queue
+from app.indexing.source import UnsafeSourceError, repo_name_from_url, validate_url
 from app.models import Repository, User
-from app.schemas import RepoUploadRequest, RepoResponse, RepoFileNode, PaginatedResponse
+from app.schemas import (
+    PaginatedResponse,
+    RepoFileNode,
+    RepoResponse,
+    RepoUploadRequest,
+)
 from app.security import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/repo", tags=["Repository"])
 
 
-# ── Helper: fetch repo owned by user ─────────────────────────
-
-
 async def _get_user_repo(db: AsyncSession, repo_id: str, user: User) -> Repository:
-    """Fetch a repo and verify it belongs to the current user."""
+    """
+    Fetch a repository the caller owns.
+
+    A repository belonging to someone else returns 404, not 403: a 403
+    confirms the id exists, which is an enumeration oracle.
+    """
     repo = await db.get(Repository, repo_id)
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
-    # Allow access if repo has no owner (legacy) or belongs to user
     if repo.user_id is not None and repo.user_id != user.id:
         raise HTTPException(status_code=404, detail="Repository not found")
     return repo
@@ -37,61 +66,66 @@ async def _get_user_repo(db: AsyncSession, repo_id: str, user: User) -> Reposito
 @router.post("/upload", response_model=RepoResponse, status_code=202)
 async def upload_repo(
     request: RepoUploadRequest,
-    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Clone a Git repository and start the ingestion pipeline.
-    Returns immediately with status 'pending'. Ingestion runs in background.
-    """
-    repo_id = str(uuid.uuid4())
+    """Register a repository and queue it for indexing."""
+    try:
+        url = validate_url(request.url)
+    except UnsafeSourceError as exc:
+        # Fail here, where the user can read it, not inside a worker.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    existing = await db.execute(
+        select(Repository).where(
+            Repository.user_id == user.id, Repository.url == url
+        )
+    )
+    already = existing.scalars().first()
+    if already:
+        await queue.enqueue(db, already.id, "full_index", {"ref": None})
+        await db.commit()
+        logger.info("repo %s re-queued for user %s", already.id, user.id)
+        return already
 
     repo = Repository(
-        id=repo_id,
+        id=str(uuid.uuid4()),
         user_id=user.id,
-        name=request.url.split("/")[-1].replace(".git", ""),
-        url=request.url,
-        local_path="",
+        name=repo_name_from_url(url),
+        url=url,
+        local_path="",  # v2 keeps no checkout; retained for schema compatibility
         status="pending",
     )
     db.add(repo)
+    await db.flush()
+
+    # Same transaction as the row above: a repository can never exist
+    # without its job, and a job can never reference a rolled-back
+    # repository.
+    await queue.enqueue(db, repo.id, "full_index", {"ref": None})
     await db.commit()
     await db.refresh(repo)
 
-    # Schedule background ingestion
-    background_tasks.add_task(_run_background_ingestion, repo_id, request.url)
-
-    logger.info(
-        "Repo %s queued for ingestion by user %s: %s", repo_id, user.id, request.url
-    )
+    logger.info("repo %s queued by user %s: %s", repo.id, user.id, url)
     return repo
 
 
-async def _run_background_ingestion(repo_id: str, url: str):
-    """Run ingestion in background with its own DB session."""
-    from app.database import async_session_factory
-    from app.ingestion.pipeline import run_ingestion_pipeline
-
-    try:
-        async with async_session_factory() as db:
-            try:
-                await run_ingestion_pipeline(repo_id, url, db)
-                # Only commit here if the pipeline didn't already commit its final state.
-                # The pipeline commits on success/failure internally, so this is a no-op safety net.
-            except Exception as exc:
-                logger.exception(
-                    "Background ingestion failed for repo %s: %s", repo_id, exc
-                )
-                try:
-                    await db.rollback()
-                except Exception:
-                    pass  # Session may be corrupted — pipeline already handled marking failure
-    except Exception as outer_exc:
-        # Session factory or context-manager itself failed
-        logger.exception(
-            "Background ingestion session error for repo %s: %s", repo_id, outer_exc
-        )
+@router.post("/{repo_id}/reindex", status_code=202)
+async def reindex_repo(
+    repo_id: str,
+    force: bool = Query(False, description="Reindex even if the commit is unchanged"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Queue a re-index. Deduplicated against any job already pending."""
+    repo = await _get_user_repo(db, repo_id, user)
+    job_id = await queue.enqueue(db, repo.id, "full_index", {"force": force})
+    await db.commit()
+    return {
+        "repo_id": repo.id,
+        "queued": job_id is not None,
+        "detail": "queued" if job_id else "a job is already pending for this repository",
+    }
 
 
 @router.get("/{repo_id}", response_model=RepoResponse)
@@ -100,7 +134,6 @@ async def get_repo(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get repository details and ingestion status."""
     return await _get_user_repo(db, repo_id, user)
 
 
@@ -110,154 +143,105 @@ async def get_repo_status(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Check ingestion status for a repository."""
+    """
+    Indexing status, including the queue state.
+
+    v1 reported only a progress percentage written by the in-process task,
+    which stopped updating the moment that process died and left no way to
+    tell a running ingest from a dead one. The job row is the truth.
+    """
     repo = await _get_user_repo(db, repo_id, user)
+    job = (
+        await db.execute(
+            text(
+                "SELECT status, attempts, max_attempts, last_error, run_after "
+                "FROM ingest_jobs WHERE repo_id = :i "
+                "ORDER BY created_at DESC LIMIT 1"
+            ),
+            {"i": repo_id},
+        )
+    ).first()
+
     return {
-        "id": repo.id,
+        "repo_id": repo.id,
         "status": repo.status,
-        "file_count": repo.file_count,
+        "progress": repo.ingestion_progress,
+        "phase": repo.ingestion_phase,
         "chunk_count": repo.chunk_count,
-        "ingestion_progress": repo.ingestion_progress or 0,
-        "ingestion_total_chunks": repo.ingestion_total_chunks or 0,
-        "ingestion_cached_chunks": repo.ingestion_cached_chunks or 0,
-        "ingestion_phase": getattr(repo, "ingestion_phase", None) or "clone",
+        "indexed_commit": repo.indexed_commit_sha,
+        "last_indexed_at": repo.last_indexed_at,
         "error_message": repo.error_message,
+        "job": None if job is None else {
+            "status": job.status,
+            "attempts": job.attempts,
+            "max_attempts": job.max_attempts,
+            "last_error": job.last_error,
+            "next_attempt_at": job.run_after,
+        },
     }
 
 
 @router.get("/{repo_id}/files", response_model=list[RepoFileNode])
 async def get_repo_files(
     repo_id: str,
-    path: str = "",
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List files and directories in the ingested repository."""
-    repo = await _get_user_repo(db, repo_id, user)
-    if repo.status != "ready":
-        raise HTTPException(
-            status_code=400, detail=f"Repository not ready (status: {repo.status})"
-        )
+    """
+    The indexed file tree.
 
-    # Gracefully handle missing local_path (e.g. after deploy/restart)
-    if not repo.local_path:
-        return []
-
-    base = Path(repo.local_path) / path
-    if not base.exists() or not base.is_dir():
-        # Directory doesn't exist on disk — return empty instead of 404
-        return []
-
-    skip_dirs = {".git", "__pycache__", "node_modules", ".venv", "venv"}
-    nodes: list[RepoFileNode] = []
-
-    try:
-        for entry in sorted(
-            base.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())
-        ):
-            if entry.name in skip_dirs:
-                continue
-            rel = str(entry.relative_to(Path(repo.local_path))).replace("\\", "/")
-            nodes.append(
-                RepoFileNode(
-                    name=entry.name,
-                    path=rel,
-                    type="directory" if entry.is_dir() else "file",
-                )
-            )
-    except PermissionError:
-        raise HTTPException(status_code=403, detail="Permission denied")
-    except OSError:
-        # Filesystem error — return empty gracefully
-        return []
-
-    return nodes
-
-
-# Language detection by extension
-LANGUAGE_MAP = {
-    ".py": "python",
-    ".js": "javascript",
-    ".ts": "typescript",
-    ".tsx": "typescript",
-    ".jsx": "javascript",
-    ".java": "java",
-    ".go": "go",
-    ".rs": "rust",
-    ".c": "c",
-    ".cpp": "cpp",
-    ".h": "c",
-    ".hpp": "cpp",
-    ".cs": "csharp",
-    ".rb": "ruby",
-    ".php": "php",
-    ".swift": "swift",
-    ".kt": "kotlin",
-    ".scala": "scala",
-    ".r": "r",
-    ".R": "r",
-    ".sql": "sql",
-    ".html": "html",
-    ".css": "css",
-    ".scss": "scss",
-    ".less": "less",
-    ".json": "json",
-    ".yaml": "yaml",
-    ".yml": "yaml",
-    ".xml": "xml",
-    ".md": "markdown",
-    ".sh": "bash",
-    ".bash": "bash",
-    ".zsh": "bash",
-    ".ps1": "powershell",
-    ".dockerfile": "dockerfile",
-    ".toml": "toml",
-}
+    Built from the chunks that exist, so the viewer can only offer files
+    that are genuinely searchable -- v1 listed the checkout, which could
+    disagree with the index in either direction.
+    """
+    await _get_user_repo(db, repo_id, user)
+    rows = await db.execute(
+        text("SELECT DISTINCT file_path FROM chunks WHERE repo_id = :i "
+             "ORDER BY file_path"),
+        {"i": repo_id},
+    )
+    return build_tree([r.file_path for r in rows])
 
 
 @router.get("/{repo_id}/file-content")
 async def get_file_content(
     repo_id: str,
-    path: str,
+    path: str = Query(..., description="Repository-relative file path"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the content of a specific file in the repository."""
+    """Fetch one file at the exact commit that was indexed."""
     repo = await _get_user_repo(db, repo_id, user)
-    if repo.status != "ready":
+    if not repo.url:
+        raise HTTPException(status_code=409, detail="Repository has no source URL")
+    if not repo.indexed_commit_sha:
         raise HTTPException(
-            status_code=400, detail=f"Repository not ready (status: {repo.status})"
+            status_code=409,
+            detail="Repository has not finished indexing yet",
         )
 
-    if not repo.local_path:
-        raise HTTPException(status_code=404, detail="Repository files not available")
-
-    # Security: Prevent path traversal
-    from pathlib import Path as PathLib
-
-    base_path = PathLib(repo.local_path).resolve()
-    file_path = (base_path / path).resolve()
-
-    if not str(file_path).startswith(str(base_path)):
-        raise HTTPException(status_code=400, detail="Invalid file path")
-
-    if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail="File not found")
-
-    # Limit file size (5MB)
-    if file_path.stat().st_size > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File too large")
+    # Only serve paths the index knows about: the path is user-supplied and
+    # goes into an outbound URL, and this makes the index the allowlist.
+    known = (
+        await db.execute(
+            text("SELECT 1 FROM chunks WHERE repo_id = :i AND file_path = :p LIMIT 1"),
+            {"i": repo_id, "p": path},
+        )
+    ).first()
+    if known is None:
+        raise HTTPException(status_code=404, detail=f"{path} is not in the index")
 
     try:
-        content = file_path.read_text(encoding="utf-8", errors="replace")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
+        content = await fetch_file(repo.url, repo.indexed_commit_sha, path)
+    except ContentError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    # Detect language from extension
-    suffix = file_path.suffix.lower()
-    language = LANGUAGE_MAP.get(suffix, "plaintext")
-
-    return {"content": content, "language": language}
+    return {
+        "path": content.path,
+        "content": content.text,
+        "truncated": content.truncated,
+        "ref": content.ref,
+    }
 
 
 @router.get("/")
@@ -267,14 +251,13 @@ async def list_repos(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[RepoResponse]:
-    """List all repositories owned by the current user with pagination."""
-    # Get total count
-    count_result = await db.execute(
-        select(func.count(Repository.id)).where(Repository.user_id == user.id)
-    )
-    total = count_result.scalar() or 0
+    """List the caller's repositories."""
+    total = (
+        await db.execute(
+            select(func.count(Repository.id)).where(Repository.user_id == user.id)
+        )
+    ).scalar() or 0
 
-    # Get paginated results
     offset = (page - 1) * per_page
     result = await db.execute(
         select(Repository)
@@ -300,24 +283,16 @@ async def delete_repo(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a repository and its associated data."""
+    """
+    Delete a repository and everything indexed from it.
+
+    Chunks, jobs and conversations are removed by `ON DELETE CASCADE` in one
+    transaction. v1 deleted a ChromaDB collection and a file-based cache
+    separately from the row, so a partial failure left orphans in whichever
+    store the error missed.
+    """
     repo = await _get_user_repo(db, repo_id, user)
-
-    # Clean up vector store
-    from app.ingestion.vectorstore import delete_collection
-
-    delete_collection(repo_id)
-
-    # Clean up embedding cache
-    from app.ingestion.embedding_cache import delete_cache
-
-    delete_cache(repo_id)
-
-    # Clean up files on disk
-    from app.ingestion.cloner import remove_repo
-
-    remove_repo(repo_id)
-
     await db.delete(repo)
     await db.commit()
-    return {"message": f"Repository {repo_id} deleted successfully"}
+    logger.info("repo %s deleted by user %s", repo_id, user.id)
+    return {"deleted": repo_id}

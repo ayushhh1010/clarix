@@ -1,0 +1,1837 @@
+{
+  "dataset": "symbol_v1",
+  "split": "dev",
+  "queries": 300,
+  "corpus_chunks": 3601,
+  "docstrings_stripped": true,
+  "configs": {
+    "dense only": {
+      "mrr": {
+        "name": "mrr",
+        "value": 0.794401,
+        "ci_low": 0.756774,
+        "ci_high": 0.831131,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@1": {
+        "name": "recall@1",
+        "value": 0.69,
+        "ci_low": 0.636667,
+        "ci_high": 0.743333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@1": {
+        "name": "hit@1",
+        "value": 0.69,
+        "ci_low": 0.636667,
+        "ci_high": 0.743333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@1": {
+        "name": "ndcg@1",
+        "value": 0.69,
+        "ci_low": 0.636667,
+        "ci_high": 0.743333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@5": {
+        "name": "recall@5",
+        "value": 0.92,
+        "ci_low": 0.886667,
+        "ci_high": 0.95,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@5": {
+        "name": "hit@5",
+        "value": 0.92,
+        "ci_low": 0.886667,
+        "ci_high": 0.95,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@5": {
+        "name": "ndcg@5",
+        "value": 0.821776,
+        "ci_low": 0.786096,
+        "ci_high": 0.856062,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@10": {
+        "name": "recall@10",
+        "value": 0.953333,
+        "ci_low": 0.926667,
+        "ci_high": 0.976667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@10": {
+        "name": "hit@10",
+        "value": 0.953333,
+        "ci_low": 0.926667,
+        "ci_high": 0.976667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@10": {
+        "name": "ndcg@10",
+        "value": 0.83239,
+        "ci_low": 0.799857,
+        "ci_high": 0.863531,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@20": {
+        "name": "recall@20",
+        "value": 0.98,
+        "ci_low": 0.963333,
+        "ci_high": 0.993333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@20": {
+        "name": "hit@20",
+        "value": 0.98,
+        "ci_low": 0.963333,
+        "ci_high": 0.993333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@20": {
+        "name": "ndcg@20",
+        "value": 0.838991,
+        "ci_low": 0.808254,
+        "ci_high": 0.868686,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p50_ms": {
+        "name": "latency_p50_ms",
+        "value": 7.8425,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p95_ms": {
+        "name": "latency_p95_ms",
+        "value": 9.493785,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "arm_yield": {
+        "dense": 12061
+      }
+    },
+    "lexical only": {
+      "mrr": {
+        "name": "mrr",
+        "value": 0.355163,
+        "ci_low": 0.314262,
+        "ci_high": 0.396249,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@1": {
+        "name": "recall@1",
+        "value": 0.213333,
+        "ci_low": 0.166667,
+        "ci_high": 0.26,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@1": {
+        "name": "hit@1",
+        "value": 0.213333,
+        "ci_low": 0.166667,
+        "ci_high": 0.26,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@1": {
+        "name": "ndcg@1",
+        "value": 0.213333,
+        "ci_low": 0.166667,
+        "ci_high": 0.26,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@5": {
+        "name": "recall@5",
+        "value": 0.513333,
+        "ci_low": 0.456667,
+        "ci_high": 0.57,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@5": {
+        "name": "hit@5",
+        "value": 0.513333,
+        "ci_low": 0.456667,
+        "ci_high": 0.57,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@5": {
+        "name": "ndcg@5",
+        "value": 0.363127,
+        "ci_low": 0.318047,
+        "ci_high": 0.408791,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@10": {
+        "name": "recall@10",
+        "value": 0.726667,
+        "ci_low": 0.676667,
+        "ci_high": 0.776667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@10": {
+        "name": "hit@10",
+        "value": 0.726667,
+        "ci_low": 0.676667,
+        "ci_high": 0.776667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@10": {
+        "name": "ndcg@10",
+        "value": 0.433867,
+        "ci_low": 0.39361,
+        "ci_high": 0.473649,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@20": {
+        "name": "recall@20",
+        "value": 0.87,
+        "ci_low": 0.83,
+        "ci_high": 0.906667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@20": {
+        "name": "hit@20",
+        "value": 0.87,
+        "ci_low": 0.83,
+        "ci_high": 0.906667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@20": {
+        "name": "ndcg@20",
+        "value": 0.470953,
+        "ci_low": 0.434884,
+        "ci_high": 0.506954,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p50_ms": {
+        "name": "latency_p50_ms",
+        "value": 27.9222,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p95_ms": {
+        "name": "latency_p95_ms",
+        "value": 58.12727,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "arm_yield": {
+        "lexical": 14734
+      }
+    },
+    "symbol only": {
+      "mrr": {
+        "name": "mrr",
+        "value": 0.948333,
+        "ci_low": 0.923333,
+        "ci_high": 0.971667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@1": {
+        "name": "recall@1",
+        "value": 0.943333,
+        "ci_low": 0.916667,
+        "ci_high": 0.966667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@1": {
+        "name": "hit@1",
+        "value": 0.943333,
+        "ci_low": 0.916667,
+        "ci_high": 0.966667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@1": {
+        "name": "ndcg@1",
+        "value": 0.943333,
+        "ci_low": 0.916667,
+        "ci_high": 0.966667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@5": {
+        "name": "recall@5",
+        "value": 0.953333,
+        "ci_low": 0.926667,
+        "ci_high": 0.976667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@5": {
+        "name": "hit@5",
+        "value": 0.953333,
+        "ci_low": 0.926667,
+        "ci_high": 0.976667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@5": {
+        "name": "ndcg@5",
+        "value": 0.949643,
+        "ci_low": 0.924206,
+        "ci_high": 0.972103,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@10": {
+        "name": "recall@10",
+        "value": 0.953333,
+        "ci_low": 0.926667,
+        "ci_high": 0.976667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@10": {
+        "name": "hit@10",
+        "value": 0.953333,
+        "ci_low": 0.926667,
+        "ci_high": 0.976667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@10": {
+        "name": "ndcg@10",
+        "value": 0.949643,
+        "ci_low": 0.924206,
+        "ci_high": 0.972103,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@20": {
+        "name": "recall@20",
+        "value": 0.953333,
+        "ci_low": 0.926667,
+        "ci_high": 0.976667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@20": {
+        "name": "hit@20",
+        "value": 0.953333,
+        "ci_low": 0.926667,
+        "ci_high": 0.976667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@20": {
+        "name": "ndcg@20",
+        "value": 0.949643,
+        "ci_low": 0.924206,
+        "ci_high": 0.972103,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p50_ms": {
+        "name": "latency_p50_ms",
+        "value": 15.27975,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p95_ms": {
+        "name": "latency_p95_ms",
+        "value": 22.346265,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "arm_yield": {
+        "symbol": 6223
+      }
+    },
+    "hybrid w=1,1,1": {
+      "mrr": {
+        "name": "mrr",
+        "value": 0.902148,
+        "ci_low": 0.874944,
+        "ci_high": 0.927094,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@1": {
+        "name": "recall@1",
+        "value": 0.836667,
+        "ci_low": 0.793333,
+        "ci_high": 0.876667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@1": {
+        "name": "hit@1",
+        "value": 0.836667,
+        "ci_low": 0.793333,
+        "ci_high": 0.876667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@1": {
+        "name": "ndcg@1",
+        "value": 0.836667,
+        "ci_low": 0.793333,
+        "ci_high": 0.876667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@5": {
+        "name": "recall@5",
+        "value": 0.986667,
+        "ci_low": 0.973333,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@5": {
+        "name": "hit@5",
+        "value": 0.986667,
+        "ci_low": 0.973333,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@5": {
+        "name": "ndcg@5",
+        "value": 0.92297,
+        "ci_low": 0.900385,
+        "ci_high": 0.94348,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@10": {
+        "name": "recall@10",
+        "value": 0.993333,
+        "ci_low": 0.983333,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@10": {
+        "name": "hit@10",
+        "value": 0.993333,
+        "ci_low": 0.983333,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@10": {
+        "name": "ndcg@10",
+        "value": 0.925161,
+        "ci_low": 0.90374,
+        "ci_high": 0.944586,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@20": {
+        "name": "recall@20",
+        "value": 0.993333,
+        "ci_low": 0.983333,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@20": {
+        "name": "hit@20",
+        "value": 0.993333,
+        "ci_low": 0.983333,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@20": {
+        "name": "ndcg@20",
+        "value": 0.925161,
+        "ci_low": 0.90374,
+        "ci_high": 0.944586,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p50_ms": {
+        "name": "latency_p50_ms",
+        "value": 52.24425,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p95_ms": {
+        "name": "latency_p95_ms",
+        "value": 94.732875,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "arm_yield": {
+        "dense": 12061,
+        "lexical": 14734,
+        "symbol": 6223
+      }
+    },
+    "hybrid w=1,.5,.5": {
+      "mrr": {
+        "name": "mrr",
+        "value": 0.904946,
+        "ci_low": 0.877945,
+        "ci_high": 0.929667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@1": {
+        "name": "recall@1",
+        "value": 0.84,
+        "ci_low": 0.796667,
+        "ci_high": 0.88,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@1": {
+        "name": "hit@1",
+        "value": 0.84,
+        "ci_low": 0.796667,
+        "ci_high": 0.88,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@1": {
+        "name": "ndcg@1",
+        "value": 0.84,
+        "ci_low": 0.796667,
+        "ci_high": 0.88,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@5": {
+        "name": "recall@5",
+        "value": 0.986667,
+        "ci_low": 0.973333,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@5": {
+        "name": "hit@5",
+        "value": 0.986667,
+        "ci_low": 0.973333,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@5": {
+        "name": "ndcg@5",
+        "value": 0.925157,
+        "ci_low": 0.902688,
+        "ci_high": 0.945435,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@10": {
+        "name": "recall@10",
+        "value": 0.99,
+        "ci_low": 0.976667,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@10": {
+        "name": "hit@10",
+        "value": 0.99,
+        "ci_low": 0.976667,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@10": {
+        "name": "ndcg@10",
+        "value": 0.926268,
+        "ci_low": 0.904363,
+        "ci_high": 0.946195,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@20": {
+        "name": "recall@20",
+        "value": 0.993333,
+        "ci_low": 0.983333,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@20": {
+        "name": "hit@20",
+        "value": 0.993333,
+        "ci_low": 0.983333,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@20": {
+        "name": "ndcg@20",
+        "value": 0.927198,
+        "ci_low": 0.906074,
+        "ci_high": 0.946546,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p50_ms": {
+        "name": "latency_p50_ms",
+        "value": 58.92845,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p95_ms": {
+        "name": "latency_p95_ms",
+        "value": 113.181645,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "arm_yield": {
+        "dense": 12061,
+        "lexical": 14734,
+        "symbol": 6223
+      }
+    },
+    "hybrid w=1,.25,.25": {
+      "mrr": {
+        "name": "mrr",
+        "value": 0.915389,
+        "ci_low": 0.889167,
+        "ci_high": 0.94,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@1": {
+        "name": "recall@1",
+        "value": 0.863333,
+        "ci_low": 0.823333,
+        "ci_high": 0.903333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@1": {
+        "name": "hit@1",
+        "value": 0.863333,
+        "ci_low": 0.823333,
+        "ci_high": 0.903333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@1": {
+        "name": "ndcg@1",
+        "value": 0.863333,
+        "ci_low": 0.823333,
+        "ci_high": 0.903333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@5": {
+        "name": "recall@5",
+        "value": 0.976667,
+        "ci_low": 0.956667,
+        "ci_high": 0.993333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@5": {
+        "name": "hit@5",
+        "value": 0.976667,
+        "ci_low": 0.956667,
+        "ci_high": 0.993333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@5": {
+        "name": "ndcg@5",
+        "value": 0.930071,
+        "ci_low": 0.906837,
+        "ci_high": 0.951448,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@10": {
+        "name": "recall@10",
+        "value": 0.983333,
+        "ci_low": 0.966667,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@10": {
+        "name": "hit@10",
+        "value": 0.983333,
+        "ci_low": 0.966667,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@10": {
+        "name": "ndcg@10",
+        "value": 0.932446,
+        "ci_low": 0.910379,
+        "ci_high": 0.952783,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@20": {
+        "name": "recall@20",
+        "value": 0.986667,
+        "ci_low": 0.973333,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@20": {
+        "name": "hit@20",
+        "value": 0.986667,
+        "ci_low": 0.973333,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@20": {
+        "name": "ndcg@20",
+        "value": 0.933347,
+        "ci_low": 0.911503,
+        "ci_high": 0.953295,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p50_ms": {
+        "name": "latency_p50_ms",
+        "value": 51.409,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p95_ms": {
+        "name": "latency_p95_ms",
+        "value": 92.42346,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "arm_yield": {
+        "dense": 12061,
+        "lexical": 14734,
+        "symbol": 6223
+      }
+    },
+    "hybrid w=1,.1,.1": {
+      "mrr": {
+        "name": "mrr",
+        "value": 0.900485,
+        "ci_low": 0.870877,
+        "ci_high": 0.92786,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@1": {
+        "name": "recall@1",
+        "value": 0.853333,
+        "ci_low": 0.813333,
+        "ci_high": 0.893333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@1": {
+        "name": "hit@1",
+        "value": 0.853333,
+        "ci_low": 0.813333,
+        "ci_high": 0.893333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@1": {
+        "name": "ndcg@1",
+        "value": 0.853333,
+        "ci_low": 0.813333,
+        "ci_high": 0.893333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@5": {
+        "name": "recall@5",
+        "value": 0.963333,
+        "ci_low": 0.94,
+        "ci_high": 0.983333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@5": {
+        "name": "hit@5",
+        "value": 0.963333,
+        "ci_low": 0.94,
+        "ci_high": 0.983333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@5": {
+        "name": "ndcg@5",
+        "value": 0.91457,
+        "ci_low": 0.887004,
+        "ci_high": 0.939238,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@10": {
+        "name": "recall@10",
+        "value": 0.976667,
+        "ci_low": 0.956667,
+        "ci_high": 0.993333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@10": {
+        "name": "hit@10",
+        "value": 0.976667,
+        "ci_low": 0.956667,
+        "ci_high": 0.993333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@10": {
+        "name": "ndcg@10",
+        "value": 0.918776,
+        "ci_low": 0.893619,
+        "ci_high": 0.941861,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@20": {
+        "name": "recall@20",
+        "value": 0.986667,
+        "ci_low": 0.973333,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@20": {
+        "name": "hit@20",
+        "value": 0.986667,
+        "ci_low": 0.973333,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@20": {
+        "name": "ndcg@20",
+        "value": 0.921311,
+        "ci_low": 0.8969,
+        "ci_high": 0.943393,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p50_ms": {
+        "name": "latency_p50_ms",
+        "value": 41.56895,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p95_ms": {
+        "name": "latency_p95_ms",
+        "value": 90.167395,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "arm_yield": {
+        "dense": 12061,
+        "lexical": 14734,
+        "symbol": 6223
+      }
+    },
+    "hybrid w=1,.25,.5": {
+      "mrr": {
+        "name": "mrr",
+        "value": 0.920556,
+        "ci_low": 0.895,
+        "ci_high": 0.944167,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@1": {
+        "name": "recall@1",
+        "value": 0.873333,
+        "ci_low": 0.836667,
+        "ci_high": 0.91,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@1": {
+        "name": "hit@1",
+        "value": 0.873333,
+        "ci_low": 0.836667,
+        "ci_high": 0.91,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@1": {
+        "name": "ndcg@1",
+        "value": 0.873333,
+        "ci_low": 0.836667,
+        "ci_high": 0.91,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@5": {
+        "name": "recall@5",
+        "value": 0.976667,
+        "ci_low": 0.956667,
+        "ci_high": 0.993333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@5": {
+        "name": "hit@5",
+        "value": 0.976667,
+        "ci_low": 0.956667,
+        "ci_high": 0.993333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@5": {
+        "name": "ndcg@5",
+        "value": 0.933908,
+        "ci_low": 0.911165,
+        "ci_high": 0.954681,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@10": {
+        "name": "recall@10",
+        "value": 0.983333,
+        "ci_low": 0.966667,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@10": {
+        "name": "hit@10",
+        "value": 0.983333,
+        "ci_low": 0.966667,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@10": {
+        "name": "ndcg@10",
+        "value": 0.936283,
+        "ci_low": 0.914781,
+        "ci_high": 0.956042,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@20": {
+        "name": "recall@20",
+        "value": 0.986667,
+        "ci_low": 0.973333,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@20": {
+        "name": "hit@20",
+        "value": 0.986667,
+        "ci_low": 0.973333,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@20": {
+        "name": "ndcg@20",
+        "value": 0.937184,
+        "ci_low": 0.916127,
+        "ci_high": 0.956613,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p50_ms": {
+        "name": "latency_p50_ms",
+        "value": 37.816,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p95_ms": {
+        "name": "latency_p95_ms",
+        "value": 73.930055,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "arm_yield": {
+        "dense": 12061,
+        "lexical": 14734,
+        "symbol": 6223
+      }
+    },
+    "hybrid w=1,.25,1": {
+      "mrr": {
+        "name": "mrr",
+        "value": 0.932278,
+        "ci_low": 0.909221,
+        "ci_high": 0.953389,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@1": {
+        "name": "recall@1",
+        "value": 0.886667,
+        "ci_low": 0.85,
+        "ci_high": 0.92,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@1": {
+        "name": "hit@1",
+        "value": 0.886667,
+        "ci_low": 0.85,
+        "ci_high": 0.92,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@1": {
+        "name": "ndcg@1",
+        "value": 0.886667,
+        "ci_low": 0.85,
+        "ci_high": 0.92,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@5": {
+        "name": "recall@5",
+        "value": 0.98,
+        "ci_low": 0.963333,
+        "ci_high": 0.993333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@5": {
+        "name": "hit@5",
+        "value": 0.98,
+        "ci_low": 0.963333,
+        "ci_high": 0.993333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@5": {
+        "name": "ndcg@5",
+        "value": 0.943346,
+        "ci_low": 0.922115,
+        "ci_high": 0.962369,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@10": {
+        "name": "recall@10",
+        "value": 0.99,
+        "ci_low": 0.976667,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@10": {
+        "name": "hit@10",
+        "value": 0.99,
+        "ci_low": 0.976667,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@10": {
+        "name": "ndcg@10",
+        "value": 0.946684,
+        "ci_low": 0.927596,
+        "ci_high": 0.963934,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@20": {
+        "name": "recall@20",
+        "value": 0.993333,
+        "ci_low": 0.983333,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@20": {
+        "name": "hit@20",
+        "value": 0.993333,
+        "ci_low": 0.983333,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@20": {
+        "name": "ndcg@20",
+        "value": 0.947585,
+        "ci_low": 0.928952,
+        "ci_high": 0.964371,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p50_ms": {
+        "name": "latency_p50_ms",
+        "value": 36.92185,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p95_ms": {
+        "name": "latency_p95_ms",
+        "value": 72.87463,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "arm_yield": {
+        "dense": 12061,
+        "lexical": 14734,
+        "symbol": 6223
+      }
+    },
+    "hybrid w=1,.1,2": {
+      "mrr": {
+        "name": "mrr",
+        "value": 0.9448,
+        "ci_low": 0.921627,
+        "ci_high": 0.965902,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@1": {
+        "name": "recall@1",
+        "value": 0.92,
+        "ci_low": 0.886667,
+        "ci_high": 0.95,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@1": {
+        "name": "hit@1",
+        "value": 0.92,
+        "ci_low": 0.886667,
+        "ci_high": 0.95,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@1": {
+        "name": "ndcg@1",
+        "value": 0.92,
+        "ci_low": 0.886667,
+        "ci_high": 0.95,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@5": {
+        "name": "recall@5",
+        "value": 0.97,
+        "ci_low": 0.95,
+        "ci_high": 0.986667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@5": {
+        "name": "hit@5",
+        "value": 0.97,
+        "ci_low": 0.95,
+        "ci_high": 0.986667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@5": {
+        "name": "ndcg@5",
+        "value": 0.949629,
+        "ci_low": 0.927202,
+        "ci_high": 0.969801,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@10": {
+        "name": "recall@10",
+        "value": 0.983333,
+        "ci_low": 0.966667,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@10": {
+        "name": "hit@10",
+        "value": 0.983333,
+        "ci_low": 0.966667,
+        "ci_high": 0.996667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@10": {
+        "name": "ndcg@10",
+        "value": 0.953651,
+        "ci_low": 0.93343,
+        "ci_high": 0.971958,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@20": {
+        "name": "recall@20",
+        "value": 0.993333,
+        "ci_low": 0.983333,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@20": {
+        "name": "hit@20",
+        "value": 0.993333,
+        "ci_low": 0.983333,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@20": {
+        "name": "ndcg@20",
+        "value": 0.956187,
+        "ci_low": 0.93729,
+        "ci_high": 0.97318,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p50_ms": {
+        "name": "latency_p50_ms",
+        "value": 37.70215,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p95_ms": {
+        "name": "latency_p95_ms",
+        "value": 69.685845,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "arm_yield": {
+        "dense": 12061,
+        "lexical": 14734,
+        "symbol": 6223
+      }
+    },
+    "hybrid w=.5,.1,2": {
+      "mrr": {
+        "name": "mrr",
+        "value": 0.960331,
+        "ci_low": 0.940331,
+        "ci_high": 0.978056,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@1": {
+        "name": "recall@1",
+        "value": 0.943333,
+        "ci_low": 0.916667,
+        "ci_high": 0.966667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@1": {
+        "name": "hit@1",
+        "value": 0.943333,
+        "ci_low": 0.916667,
+        "ci_high": 0.966667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@1": {
+        "name": "ndcg@1",
+        "value": 0.943333,
+        "ci_low": 0.916667,
+        "ci_high": 0.966667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@5": {
+        "name": "recall@5",
+        "value": 0.98,
+        "ci_low": 0.963333,
+        "ci_high": 0.993333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@5": {
+        "name": "hit@5",
+        "value": 0.98,
+        "ci_low": 0.963333,
+        "ci_high": 0.993333,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@5": {
+        "name": "ndcg@5",
+        "value": 0.964028,
+        "ci_low": 0.944875,
+        "ci_high": 0.981078,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@10": {
+        "name": "recall@10",
+        "value": 0.99,
+        "ci_low": 0.976667,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@10": {
+        "name": "hit@10",
+        "value": 0.99,
+        "ci_low": 0.976667,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@10": {
+        "name": "ndcg@10",
+        "value": 0.967407,
+        "ci_low": 0.950213,
+        "ci_high": 0.982428,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@20": {
+        "name": "recall@20",
+        "value": 0.993333,
+        "ci_low": 0.983333,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@20": {
+        "name": "hit@20",
+        "value": 0.993333,
+        "ci_low": 0.983333,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@20": {
+        "name": "ndcg@20",
+        "value": 0.96826,
+        "ci_low": 0.95155,
+        "ci_high": 0.982838,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p50_ms": {
+        "name": "latency_p50_ms",
+        "value": 50.9282,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p95_ms": {
+        "name": "latency_p95_ms",
+        "value": 92.002905,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "arm_yield": {
+        "dense": 12061,
+        "lexical": 14734,
+        "symbol": 6223
+      }
+    },
+    "ROUTED (shipping)": {
+      "mrr": {
+        "name": "mrr",
+        "value": 0.974363,
+        "ci_low": 0.959755,
+        "ci_high": 0.986667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@1": {
+        "name": "recall@1",
+        "value": 0.953333,
+        "ci_low": 0.926667,
+        "ci_high": 0.976667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@1": {
+        "name": "hit@1",
+        "value": 0.953333,
+        "ci_low": 0.926667,
+        "ci_high": 0.976667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@1": {
+        "name": "ndcg@1",
+        "value": 0.953333,
+        "ci_low": 0.926667,
+        "ci_high": 0.976667,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@5": {
+        "name": "recall@5",
+        "value": 0.996667,
+        "ci_low": 0.99,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@5": {
+        "name": "hit@5",
+        "value": 0.996667,
+        "ci_low": 0.99,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@5": {
+        "name": "ndcg@5",
+        "value": 0.980006,
+        "ci_low": 0.968061,
+        "ci_high": 0.990158,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@10": {
+        "name": "recall@10",
+        "value": 0.996667,
+        "ci_low": 0.99,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@10": {
+        "name": "hit@10",
+        "value": 0.996667,
+        "ci_low": 0.99,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@10": {
+        "name": "ndcg@10",
+        "value": 0.980006,
+        "ci_low": 0.968061,
+        "ci_high": 0.990158,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "recall@20": {
+        "name": "recall@20",
+        "value": 1.0,
+        "ci_low": 1.0,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "hit@20": {
+        "name": "hit@20",
+        "value": 1.0,
+        "ci_low": 1.0,
+        "ci_high": 1.0,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "ndcg@20": {
+        "name": "ndcg@20",
+        "value": 0.980805,
+        "ci_low": 0.96966,
+        "ci_high": 0.990158,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p50_ms": {
+        "name": "latency_p50_ms",
+        "value": 52.7669,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "latency_p95_ms": {
+        "name": "latency_p95_ms",
+        "value": 98.50096,
+        "ci_low": NaN,
+        "ci_high": NaN,
+        "n": 300,
+        "confidence": 0.95
+      },
+      "arm_yield": {
+        "dense": 12061,
+        "lexical": 14704,
+        "symbol": 6309
+      }
+    }
+  },
+  "comparisons": [
+    {
+      "metric": "recall@10",
+      "baseline": "dense only",
+      "candidate": "lexical only",
+      "baseline_mean": 0.953333,
+      "candidate_mean": 0.726667,
+      "delta": -0.226667,
+      "ci_low": -0.283333,
+      "ci_high": -0.173333,
+      "p_value": 0.0,
+      "p_adjusted": 0.0,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "mrr",
+      "baseline": "dense only",
+      "candidate": "lexical only",
+      "baseline_mean": 0.794401,
+      "candidate_mean": 0.355163,
+      "delta": -0.439238,
+      "ci_low": -0.492438,
+      "ci_high": -0.385615,
+      "p_value": 0.0,
+      "p_adjusted": 0.0,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "recall@10",
+      "baseline": "dense only",
+      "candidate": "symbol only",
+      "baseline_mean": 0.953333,
+      "candidate_mean": 0.953333,
+      "delta": 0.0,
+      "ci_low": -0.023333,
+      "ci_high": 0.023333,
+      "p_value": 1.0,
+      "p_adjusted": 1.0,
+      "n": 300,
+      "significant": false
+    },
+    {
+      "metric": "mrr",
+      "baseline": "dense only",
+      "candidate": "symbol only",
+      "baseline_mean": 0.794401,
+      "candidate_mean": 0.948333,
+      "delta": 0.153932,
+      "ci_low": 0.118119,
+      "ci_high": 0.190923,
+      "p_value": 0.0,
+      "p_adjusted": 0.0,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "recall@10",
+      "baseline": "dense only",
+      "candidate": "hybrid w=1,1,1",
+      "baseline_mean": 0.953333,
+      "candidate_mean": 0.993333,
+      "delta": 0.04,
+      "ci_low": 0.02,
+      "ci_high": 0.063333,
+      "p_value": 0.0007,
+      "p_adjusted": 0.0063,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "mrr",
+      "baseline": "dense only",
+      "candidate": "hybrid w=1,1,1",
+      "baseline_mean": 0.794401,
+      "candidate_mean": 0.902148,
+      "delta": 0.107747,
+      "ci_low": 0.076051,
+      "ci_high": 0.140036,
+      "p_value": 0.0,
+      "p_adjusted": 0.0,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "recall@10",
+      "baseline": "dense only",
+      "candidate": "hybrid w=1,.5,.5",
+      "baseline_mean": 0.953333,
+      "candidate_mean": 0.99,
+      "delta": 0.036667,
+      "ci_low": 0.016667,
+      "ci_high": 0.06,
+      "p_value": 0.0007,
+      "p_adjusted": 0.0063,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "mrr",
+      "baseline": "dense only",
+      "candidate": "hybrid w=1,.5,.5",
+      "baseline_mean": 0.794401,
+      "candidate_mean": 0.904946,
+      "delta": 0.110545,
+      "ci_low": 0.079102,
+      "ci_high": 0.141663,
+      "p_value": 0.0,
+      "p_adjusted": 0.0,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "recall@10",
+      "baseline": "dense only",
+      "candidate": "hybrid w=1,.25,.25",
+      "baseline_mean": 0.953333,
+      "candidate_mean": 0.983333,
+      "delta": 0.03,
+      "ci_low": 0.013333,
+      "ci_high": 0.05,
+      "p_value": 0.0035,
+      "p_adjusted": 0.0175,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "mrr",
+      "baseline": "dense only",
+      "candidate": "hybrid w=1,.25,.25",
+      "baseline_mean": 0.794401,
+      "candidate_mean": 0.915389,
+      "delta": 0.120988,
+      "ci_low": 0.094792,
+      "ci_high": 0.148457,
+      "p_value": 0.0,
+      "p_adjusted": 0.0,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "recall@10",
+      "baseline": "dense only",
+      "candidate": "hybrid w=1,.1,.1",
+      "baseline_mean": 0.953333,
+      "candidate_mean": 0.976667,
+      "delta": 0.023333,
+      "ci_low": 0.006667,
+      "ci_high": 0.04,
+      "p_value": 0.0151,
+      "p_adjusted": 0.0302,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "mrr",
+      "baseline": "dense only",
+      "candidate": "hybrid w=1,.1,.1",
+      "baseline_mean": 0.794401,
+      "candidate_mean": 0.900485,
+      "delta": 0.106084,
+      "ci_low": 0.08277,
+      "ci_high": 0.130825,
+      "p_value": 0.0,
+      "p_adjusted": 0.0,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "recall@10",
+      "baseline": "dense only",
+      "candidate": "hybrid w=1,.25,.5",
+      "baseline_mean": 0.953333,
+      "candidate_mean": 0.983333,
+      "delta": 0.03,
+      "ci_low": 0.013333,
+      "ci_high": 0.05,
+      "p_value": 0.0035,
+      "p_adjusted": 0.0175,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "mrr",
+      "baseline": "dense only",
+      "candidate": "hybrid w=1,.25,.5",
+      "baseline_mean": 0.794401,
+      "candidate_mean": 0.920556,
+      "delta": 0.126154,
+      "ci_low": 0.099053,
+      "ci_high": 0.154633,
+      "p_value": 0.0,
+      "p_adjusted": 0.0,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "recall@10",
+      "baseline": "dense only",
+      "candidate": "hybrid w=1,.25,1",
+      "baseline_mean": 0.953333,
+      "candidate_mean": 0.99,
+      "delta": 0.036667,
+      "ci_low": 0.016667,
+      "ci_high": 0.06,
+      "p_value": 0.0011,
+      "p_adjusted": 0.0077,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "mrr",
+      "baseline": "dense only",
+      "candidate": "hybrid w=1,.25,1",
+      "baseline_mean": 0.794401,
+      "candidate_mean": 0.932278,
+      "delta": 0.137876,
+      "ci_low": 0.108985,
+      "ci_high": 0.167868,
+      "p_value": 0.0,
+      "p_adjusted": 0.0,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "recall@10",
+      "baseline": "dense only",
+      "candidate": "hybrid w=1,.1,2",
+      "baseline_mean": 0.953333,
+      "candidate_mean": 0.983333,
+      "delta": 0.03,
+      "ci_low": 0.013333,
+      "ci_high": 0.05,
+      "p_value": 0.0042,
+      "p_adjusted": 0.0175,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "mrr",
+      "baseline": "dense only",
+      "candidate": "hybrid w=1,.1,2",
+      "baseline_mean": 0.794401,
+      "candidate_mean": 0.9448,
+      "delta": 0.150399,
+      "ci_low": 0.119862,
+      "ci_high": 0.182077,
+      "p_value": 0.0,
+      "p_adjusted": 0.0,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "recall@10",
+      "baseline": "dense only",
+      "candidate": "hybrid w=.5,.1,2",
+      "baseline_mean": 0.953333,
+      "candidate_mean": 0.99,
+      "delta": 0.036667,
+      "ci_low": 0.016667,
+      "ci_high": 0.06,
+      "p_value": 0.0011,
+      "p_adjusted": 0.0077,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "mrr",
+      "baseline": "dense only",
+      "candidate": "hybrid w=.5,.1,2",
+      "baseline_mean": 0.794401,
+      "candidate_mean": 0.960331,
+      "delta": 0.165929,
+      "ci_low": 0.133124,
+      "ci_high": 0.199855,
+      "p_value": 0.0,
+      "p_adjusted": 0.0,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "recall@10",
+      "baseline": "dense only",
+      "candidate": "ROUTED (shipping)",
+      "baseline_mean": 0.953333,
+      "candidate_mean": 0.996667,
+      "delta": 0.043333,
+      "ci_low": 0.023333,
+      "ci_high": 0.066667,
+      "p_value": 0.0001,
+      "p_adjusted": 0.001,
+      "n": 300,
+      "significant": true
+    },
+    {
+      "metric": "mrr",
+      "baseline": "dense only",
+      "candidate": "ROUTED (shipping)",
+      "baseline_mean": 0.794401,
+      "candidate_mean": 0.974363,
+      "delta": 0.179961,
+      "ci_low": 0.146055,
+      "ci_high": 0.214623,
+      "p_value": 0.0,
+      "p_adjusted": 0.0,
+      "n": 300,
+      "significant": true
+    }
+  ]
+}

@@ -38,8 +38,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, Iterator
+from typing import TYPE_CHECKING
 
 from app.indexing.languages import (
     LanguageSpec,
@@ -97,25 +98,6 @@ class Chunk:
         if self.symbol:
             parts.append(self.symbol)
         return f"{self.file_path}::{'.'.join(parts)}" if parts else self.file_path
-
-    def to_metadata(self) -> dict:
-        return {
-            "chunk_id": self.chunk_id,
-            "content_sha": self.content_sha,
-            "repo_id": self.repo_id,
-            "file_path": self.file_path,
-            "language": self.language,
-            "start_line": self.start_line,
-            "end_line": self.end_line,
-            "token_count": self.token_count,
-            "kind": self.kind,
-            "node_type": self.node_type or "",
-            "symbol": self.symbol or "",
-            "parent_scope": ".".join(self.parent_scope),
-            "symbol_path": self.symbol_path,
-            "part": self.part,
-            "part_of": self.part_of,
-        }
 
 
 @dataclass
@@ -210,9 +192,37 @@ class ASTChunker:
                 self.stats.files_windowed += 1
                 chunks = self._window(repo_id, file_path, source, language, kind="window")
 
+        chunks = self._disambiguate_ids(chunks)
         self.stats.chunks_emitted += len(chunks)
         self.stats.by_language[language] = self.stats.by_language.get(language, 0) + len(chunks)
         return chunks
+
+    @staticmethod
+    def _disambiguate_ids(chunks: list[Chunk]) -> list[Chunk]:
+        """
+        Guarantee chunk_id uniqueness within a file.
+
+        `chunk_id` is derived from the symbol path, which is stable across
+        line drift -- the property incremental reindexing depends on. But a
+        chunk with no resolvable symbol falls back to the bare file path, so
+        every anonymous chunk in a file would otherwise share one id. With
+        `ON CONFLICT DO UPDATE` on insert that is silent data loss: the last
+        writer wins and the rest of the file vanishes from the index.
+
+        Collisions are re-keyed with their ordinal among the colliding group.
+        Order is deterministic (chunks are already line-sorted), so ids stay
+        reproducible across runs, and a chunk that *does* have a symbol keeps
+        its drift-stable id untouched.
+        """
+        seen: dict[str, int] = {}
+        out: list[Chunk] = []
+        for chunk in chunks:
+            n = seen.get(chunk.chunk_id, 0)
+            seen[chunk.chunk_id] = n + 1
+            if n:
+                chunk.chunk_id = _sha(f"{chunk.chunk_id}:dup{n}")[:24]
+            out.append(chunk)
+        return out
 
     # -- AST path ----------------------------------------------------------
 

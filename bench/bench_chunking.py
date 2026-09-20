@@ -256,14 +256,16 @@ def iter_corpus() -> list[tuple[str, Path, str, str]]:
                 continue
             lang = language_name_for_path(str(path))
             if lang:
-                out.append((repo_dir.name, path, str(path.relative_to(repo_dir)), lang))
+                out.append((repo_dir.name, path, path.relative_to(repo_dir).as_posix(), lang))
     return out
 
 
 def run_v1(files, counter) -> tuple[dict, float]:
     """Run the v1 indentation chunker over the corpus."""
-    from app.ingestion.chunker import chunk_file as v1_chunk_file
-    from app.ingestion.parser import ParsedFile
+    # Frozen copy, not the live module: app/ingestion/ has been deleted and
+    # a baseline that disappears with the code it measured is not a baseline.
+    from v1_chunker import ParsedFile
+    from v1_chunker import chunk_file as v1_chunk_file
 
     acc: dict = {}
     t0 = time.perf_counter()

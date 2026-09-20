@@ -158,7 +158,7 @@ export const Dashboard = ({ repos }: Props) => {
 };
 """
     chunks = chunker.chunk_file("r", "src/app/dashboard/page.tsx", source)
-    assert any("Dashboard" == c.symbol for c in chunks), [c.symbol for c in chunks]
+    assert any(c.symbol == "Dashboard" for c in chunks), [c.symbol for c in chunks]
 
 
 # --- sizing ----------------------------------------------------------------
@@ -245,3 +245,43 @@ def test_line_numbers_point_at_the_real_source(chunker: ASTChunker):
     lines = source.split("\n")
     assert lines[chunk.start_line - 1].startswith("def target")
     assert chunk.end_line >= chunk.start_line
+
+
+# --- id uniqueness ---------------------------------------------------------
+
+def test_chunk_ids_are_unique_within_a_file(chunker: ASTChunker):
+    """
+    Duplicate ids mean silent data loss: an upsert keyed on chunk_id keeps
+    only the last writer. Symbol-less chunks all derive the same symbol_path
+    (the bare file path), so this is the case that actually bites.
+    """
+    source = """
+const a = 1;
+const b = 2;
+export default { a, b };
+
+function named() { return a; }
+
+(function () { return b; })();
+(function () { return a + b; })();
+"""
+    chunks = chunker.chunk_file("r", "src/anon.js", source)
+    ids = [c.chunk_id for c in chunks]
+    assert len(ids) == len(set(ids)), f"duplicate chunk_id among {len(ids)} chunks"
+
+
+def test_disambiguated_ids_are_reproducible(chunker: ASTChunker):
+    source = "const a = 1;\nconst b = 2;\nconst c = 3;\n"
+    first = [c.chunk_id for c in chunker.chunk_file("r", "src/x.js", source)]
+    second = [c.chunk_id for c in chunker.chunk_file("r", "src/x.js", source)]
+    assert first == second
+
+
+def test_ids_unique_across_the_whole_corpus_sample(chunker: ASTChunker):
+    """Same symbol name in different files must not collide."""
+    a = chunker.chunk_file("r", "app/one.py", "def handler():\n    return 1\n")
+    b = chunker.chunk_file("r", "app/two.py", "def handler():\n    return 1\n")
+    assert {c.chunk_id for c in a}.isdisjoint({c.chunk_id for c in b})
+    # ...but identical content must still share a content_sha, so the
+    # embedding cache deduplicates it.
+    assert a[0].content_sha == b[0].content_sha

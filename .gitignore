@@ -33,3 +33,6 @@ search_results.txt
 # Benchmark artifacts
 bench/venvs/
 bench/corpus/
+
+# Benchmark caches (regenerable; embeddings_cache.npz alone is ~10 MB)
+bench/results/*.npz

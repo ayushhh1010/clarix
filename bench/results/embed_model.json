@@ -1,0 +1,25 @@
+{
+  "chunks": 400,
+  "batch": 16,
+  "threads": 0,
+  "variants": {
+    "fp32": {
+      "seconds": 445.6,
+      "chunks_per_sec": 0.9,
+      "recall_vs_fp32": 1.0,
+      "mean_cosine_to_fp32": 1.0
+    },
+    "fp16": {
+      "seconds": 326.9,
+      "chunks_per_sec": 1.22,
+      "recall_vs_fp32": 1.0,
+      "mean_cosine_to_fp32": 1.0
+    },
+    "int8": {
+      "seconds": 211.8,
+      "chunks_per_sec": 1.89,
+      "recall_vs_fp32": 0.91,
+      "mean_cosine_to_fp32": 0.9809
+    }
+  }
+}

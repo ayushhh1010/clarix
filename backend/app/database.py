@@ -1,8 +1,11 @@
 """
 Async SQLAlchemy database engine, session management, and Base model.
+
+Schema is owned by Alembic. `init_db` verifies, it does not create.
 """
 
-from sqlalchemy import text
+import logging
+
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -12,6 +15,7 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.config import get_settings
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 # Ensure we use asyncpg driver even if Railway/PaaS injects standard postgres:// url
@@ -55,95 +59,58 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db() -> None:
-    """Create all tables on startup and run lightweight migrations."""
-    async with engine.begin() as conn:
-        from app import models  # noqa: F401 — ensure models are imported
+    """
+    Verify the schema is at the expected migration, and say so if it is not.
 
-        await conn.run_sync(Base.metadata.create_all)
+    This function no longer creates or alters anything. It used to call
+    `Base.metadata.create_all` and then apply a series of hand-written
+    `ALTER TABLE ... IF NOT EXISTS` statements, each wrapped in a bare
+    `except Exception: pass`, under a comment reading "Since this project
+    doesn't use Alembic". The project uses Alembic now, and two schema
+    managers is how a schema drifts: `create_all` would happily recreate a
+    table Alembic had deliberately altered, and the silent excepts meant a
+    failed migration looked exactly like a successful one.
 
-    # ── Lightweight migrations (add columns if missing) ──────
-    # Since this project doesn't use Alembic, we handle simple column additions here.
-    async with engine.begin() as conn:
-        # Add user_id to repositories
-        try:
-            await conn.execute(
-                text(
-                    "ALTER TABLE repositories ADD COLUMN IF NOT EXISTS "
-                    "user_id UUID REFERENCES users(id) ON DELETE CASCADE"
-                )
-            )
-        except Exception:
-            pass  # Column already exists or DB doesn't support IF NOT EXISTS
+    Schema changes go through `alembic upgrade head`. Startup only checks.
+    """
+    from sqlalchemy import inspect
 
-        # Add user_id to conversations
-        try:
-            await conn.execute(
-                text(
-                    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS "
-                    "user_id UUID REFERENCES users(id) ON DELETE CASCADE"
-                )
+    try:
+        async with engine.connect() as conn:
+            revision = await conn.run_sync(_current_revision)
+            tables = await conn.run_sync(
+                lambda sync_conn: set(inspect(sync_conn).get_table_names())
             )
-        except Exception:
-            pass
+    except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+        logger.error("could not reach the database at startup: %s", exc)
+        raise
 
-        # Add password reset columns to users
-        try:
-            await conn.execute(
-                text(
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
-                    "password_reset_token VARCHAR(255)"
-                )
-            )
-            await conn.execute(
-                text(
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
-                    "reset_token_expires TIMESTAMP"
-                )
-            )
-        except Exception:
-            pass
+    if "alembic_version" not in tables:
+        logger.error(
+            "database has no alembic_version table. Run `alembic upgrade head` "
+            "before starting the application."
+        )
+        raise RuntimeError("database schema is not managed by Alembic")
 
-        # Create indexes if missing
-        try:
-            await conn.execute(
-                text(
-                    "CREATE INDEX IF NOT EXISTS ix_repositories_user_id ON repositories(user_id)"
-                )
-            )
-            await conn.execute(
-                text(
-                    "CREATE INDEX IF NOT EXISTS ix_conversations_user_id ON conversations(user_id)"
-                )
-            )
-        except Exception:
-            pass
+    missing = {"chunks", "embedding_cache", "ingest_jobs", "provider_usage"} - tables
+    if missing:
+        logger.error(
+            "schema is behind: missing %s. Run `alembic upgrade head`.",
+            ", ".join(sorted(missing)),
+        )
+        raise RuntimeError(f"database schema is missing tables: {sorted(missing)}")
 
-        # Add ingestion progress columns to repositories
-        for col_name in (
-            "ingestion_progress",
-            "ingestion_total_chunks",
-            "ingestion_cached_chunks",
-        ):
-            try:
-                await conn.execute(
-                    text(
-                        f"ALTER TABLE repositories ADD COLUMN IF NOT EXISTS "
-                        f"{col_name} INTEGER DEFAULT 0"
-                    )
-                )
-            except Exception:
-                pass
+    logger.info("database schema at revision %s", revision or "unknown")
 
-        # Add ingestion_phase column
-        try:
-            await conn.execute(
-                text(
-                    "ALTER TABLE repositories ADD COLUMN IF NOT EXISTS "
-                    "ingestion_phase VARCHAR(20) DEFAULT 'clone'"
-                )
-            )
-        except Exception:
-            pass
+
+def _current_revision(sync_conn) -> str | None:
+    from sqlalchemy import inspect
+    from sqlalchemy import text as sa_text
+
+    if "alembic_version" not in inspect(sync_conn).get_table_names():
+        return None
+    row = sync_conn.execute(sa_text("SELECT version_num FROM alembic_version")).first()
+    return row[0] if row else None
 
 
 async def close_db() -> None:
