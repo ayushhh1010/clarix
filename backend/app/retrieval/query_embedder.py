@@ -38,6 +38,34 @@ class QueryVectors:
     model_id: str
 
 
+EMBED_PATH = "/embed"
+
+
+def normalise_endpoint(endpoint: str) -> str:
+    """
+    Accept either a full endpoint URL or the indexer's base URL.
+
+    Render injects a sibling service's address as `RENDER_EXTERNAL_URL`,
+    which is an origin with no path -- `fromService` cannot append one. A
+    bare origin posted to verbatim hits `/` and returns 405, and because
+    this client degrades quietly on any non-2xx, the symptom would be the
+    dense arm silently switching off. That is precisely the failure the
+    embedding service was added to fix, so it is worth absorbing here.
+
+    A URL that already names a path is left alone, so an endpoint served
+    behind a prefix or on a different route still works.
+    """
+    from urllib.parse import urlparse
+
+    cleaned = endpoint.strip().rstrip("/")
+    if not cleaned:
+        return cleaned
+    path = urlparse(cleaned).path
+    if path in ("", "/"):
+        return cleaned + EMBED_PATH
+    return cleaned
+
+
 class QueryEmbedder:
     """Base: always unavailable. Used when nothing is configured."""
 
@@ -68,7 +96,7 @@ class HttpQueryEmbedder(QueryEmbedder):
         timeout: float = DEFAULT_TIMEOUT,
         client: httpx.AsyncClient | None = None,
     ):
-        self.endpoint = endpoint.rstrip("/")
+        self.endpoint = normalise_endpoint(endpoint)
         self.expected_model = expected_model
         self.api_key = api_key
         self.timeout = timeout

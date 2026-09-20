@@ -38,6 +38,30 @@ from app.indexing.service import (  # noqa: E402
     SharedEmbedder,
     build_app,
 )
+from app.retrieval.query_embedder import normalise_endpoint  # noqa: E402
+
+# --- endpoint normalisation ------------------------------------------------
+
+@pytest.mark.parametrize(
+    "configured,expected",
+    [
+        # A bare origin is what Render's RENDER_EXTERNAL_URL gives, and
+        # `fromService` cannot append a path. Posting to it verbatim hits
+        # `/`, gets 405, and the client degrades silently -- the dense arm
+        # switches off with no error anywhere.
+        ("https://clarix-indexer.onrender.com", "https://clarix-indexer.onrender.com/embed"),
+        ("https://clarix-indexer.onrender.com/", "https://clarix-indexer.onrender.com/embed"),
+        ("http://localhost:8081", "http://localhost:8081/embed"),
+        # An explicit path is the operator's choice and must be preserved.
+        ("http://localhost:8081/embed", "http://localhost:8081/embed"),
+        ("https://host/prefix/embed", "https://host/prefix/embed"),
+        ("https://host/custom-route", "https://host/custom-route"),
+        ("https://host/embed/", "https://host/embed"),
+        ("", ""),
+    ],
+)
+def test_endpoint_normalisation(configured, expected):
+    assert normalise_endpoint(configured) == expected
 
 
 class FakeInner:
@@ -245,6 +269,28 @@ async def test_open_endpoint_when_no_key_configured(fake):
     app = build_app(Settings())
     async with await _client(app) as http, app.router.lifespan_context(app):
         assert (await http.post("/embed", json={"texts": ["a"]})).status_code == 200
+
+
+def test_docs_are_disabled_in_production(fake):
+    """
+    The indexer serves one caller, the API, and never a person. Publishing
+    the request schema of an authenticated endpoint buys nothing.
+    """
+    class Prod(Settings):
+        app_env = "production"
+        embedding_api_key = "a-key"
+
+    prod = build_app(Prod())
+    paths = {r.path for r in prod.routes if hasattr(r, "path")}
+    assert "/docs" not in paths and "/redoc" not in paths
+    assert "/openapi.json" not in paths
+    # The endpoint itself is unaffected.
+    assert "/embed" in paths and "/health" in paths
+
+    # Still available outside production, where they are useful.
+    dev = build_app(Settings())
+    dev_paths = {r.path for r in dev.routes if hasattr(r, "path")}
+    assert "/docs" in dev_paths
 
 
 def test_production_without_a_key_refuses_to_start(fake):

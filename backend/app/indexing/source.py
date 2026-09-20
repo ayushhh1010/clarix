@@ -218,6 +218,20 @@ def clone(
     dest.parent.mkdir(parents=True, exist_ok=True)
 
     args = [
+        # `-c` options must precede the subcommand.
+        #
+        # core.symlinks=false makes git write a symlink entry as a small
+        # regular file containing its target path, instead of creating a
+        # real link. A cloned repository is attacker-controlled content,
+        # and a link may point anywhere on the host -- /etc/passwd, or
+        # /proc/self/environ, which on this deployment holds DATABASE_URL
+        # and EMBEDDING_API_KEY. The indexer reads every file it finds, so
+        # a followed link is an arbitrary-file-read primitive that ends up
+        # in a chunk the submitter can retrieve.
+        #
+        # The walker refuses symlinks too (pipeline.iter_source_files);
+        # this is the other half, so neither layer alone is load-bearing.
+        "-c", "core.symlinks=false",
         "clone",
         "--depth", "1",
         "--single-branch",

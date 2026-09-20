@@ -729,7 +729,54 @@ the length of a batch. It runs on its own thread with its own loop, and
 `tests/test_indexer_service.py` asserts `/health` stays responsive while an
 embed is in flight.
 
-## 9. Open defect: index/metadata state split
+## 9. Security: a symlink in a cloned repository read the host
+
+Found by a security review of the indexer, after it became reachable.
+
+`iter_source_files` walked the checkout with `rglob("*")` and admitted
+anything `path.is_file()` accepted. Both `is_file()` and `read_text()`
+**follow symlinks**, and nothing in the application checked for one.
+
+Git materialises symlinks verbatim on Linux, including absolute targets
+outside the checkout. So a repository containing
+
+    notes.txt  ->  /proc/self/environ
+    config.yml ->  /etc/passwd
+
+had those files read, chunked, embedded and written to `chunks.content`,
+which the submitter then retrieves by searching their own repository. On
+the deployed indexer `/proc/self/environ` holds `DATABASE_URL` and
+`EMBEDDING_API_KEY`, so this was credential disclosure available to anyone
+who could add a repository.
+
+None of the existing filters helped: the attacker chooses the link's name,
+so the extension allowlist is satisfied by `.txt` or `.yml`, and `/proc`
+entries report size 0 so the size cap passes.
+
+Fixed in two independent layers, so neither is load-bearing alone:
+
+  `git -c core.symlinks=false clone` writes a link as a small regular file
+  containing its target path, so nothing is ever materialised.
+
+  The walker skips symlinks *and* requires every path to resolve inside
+  the checkout. The second check is separate on purpose: a symlinked
+  parent directory lets an ordinary-looking file escape, which a
+  per-file symlink test would pass.
+
+Demonstrated rather than argued. A directory junction -- which
+`is_symlink()` reports as **False**, so the symlink check does not catch
+it -- was placed in a checkout pointing at an outside directory:
+
+| walker | file from outside the checkout |
+|---|---|
+| containment check removed | **indexed** |
+| as shipped | not indexed |
+
+That is the second layer catching what the first cannot. Three further
+tests cover real symlinks, including a symlinked parent, and run on Linux
+where the vulnerability is reachable.
+
+## 10. Open defect: index/metadata state split
 
 Not a benchmark — a bug found by reading `render.yaml` against `config.py`.
 
