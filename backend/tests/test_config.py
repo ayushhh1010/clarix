@@ -28,7 +28,6 @@ ENV_EXAMPLE = BACKEND_DIR / ".env.example"
 # Leaving these out of .env.example is deliberate, not an omission.
 UNDOCUMENTED_BY_DESIGN = {
     "google_api_key",   # legacy alias; gemini_api_key is the documented one
-    "llm_model",        # superseded by the per-provider model settings
 }
 
 
