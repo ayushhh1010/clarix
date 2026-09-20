@@ -1,0 +1,50 @@
+{
+  "chunks": 200,
+  "reps": 2,
+  "results": [
+    {
+      "batch": 1,
+      "chunks_per_sec": 2.43,
+      "rates": [
+        2.44,
+        2.42
+      ],
+      "median_hold_s": 0.25,
+      "p95_hold_s": 1.15,
+      "max_hold_s": 2.18
+    },
+    {
+      "batch": 4,
+      "chunks_per_sec": 2.43,
+      "rates": [
+        2.44,
+        2.41
+      ],
+      "median_hold_s": 1.05,
+      "p95_hold_s": 4.24,
+      "max_hold_s": 8.13
+    },
+    {
+      "batch": 8,
+      "chunks_per_sec": 2.49,
+      "rates": [
+        2.48,
+        2.5
+      ],
+      "median_hold_s": 1.95,
+      "p95_hold_s": 8.51,
+      "max_hold_s": 15.33
+    },
+    {
+      "batch": 16,
+      "chunks_per_sec": 2.32,
+      "rates": [
+        2.38,
+        2.26
+      ],
+      "median_hold_s": 4.97,
+      "p95_hold_s": 16.74,
+      "max_hold_s": 18.07
+    }
+  ]
+}

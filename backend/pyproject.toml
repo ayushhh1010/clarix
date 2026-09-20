@@ -30,18 +30,15 @@ dependencies = [
     "alembic==1.16.5",
     "pgvector==0.4.1",
 
-    # Outbound HTTP to model providers. One client, all providers.
+    # Outbound HTTP to model providers, and to the indexer's embedding
+    # endpoint from the query path. One client, all callers.
     "httpx==0.28.1",
 
-    # Agent graph + durable checkpointing. We take langgraph's core and its
-    # Postgres checkpointer, and nothing else from that ecosystem: no
-    # langchain, no community adapters, no per-provider shims.
-    "langgraph==0.6.8",
-    "langgraph-checkpoint-postgres==2.0.24",
+    # Migrations only. Alembic cannot run on asyncpg, so alembic/env.py
+    # rewrites the URL to postgresql+psycopg; the application itself never
+    # uses this driver. It stays in the base set because the release step
+    # runs `alembic upgrade head` in this same image.
     "psycopg[binary,pool]==3.2.10",
-
-    # Streaming responses.
-    "sse-starlette==3.0.2",
 
     # Auth. PyJWT over python-jose (maintained, smaller); bcrypt directly over
     # passlib (passlib 1.7.4 is unmaintained and breaks against bcrypt>=4.1).
@@ -73,8 +70,13 @@ compat-tests = [
 ]
 
 # -------------------------------------------------------------------------
-# Indexer. Runs on Modal (serverless, scale-to-zero) or as a separate local
-# process -- never inside the API container.
+# Indexer (`python -m app.indexing`). Serves the embedding endpoint the API
+# calls for query vectors, and runs the indexing worker, in one process.
+#
+# Never inside the API container: measured peak RSS is 439 MB here against
+# the API's 59.1 MB, and the two together peak at 485 MB of a 512 MB instance
+# (bench/bench_colocated_rss.py). fastapi and uvicorn come from the base
+# set; only the model and parser stack is extra.
 # -------------------------------------------------------------------------
 indexer = [
     "tree-sitter==0.25.2",

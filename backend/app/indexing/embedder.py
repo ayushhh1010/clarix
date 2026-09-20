@@ -35,12 +35,30 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 MODEL_ID = "jinaai/jina-embeddings-v2-base-code"
-# fp16 by default. Measured (bench/bench_embed_model.py, 400 chunks):
-#   fp32  0.90 chunks/s  recall@10 100.0%  cos 1.0000  (reference)
-#   fp16  1.22 chunks/s  recall@10 100.0%  cos 1.0000  <- free 1.36x
-#   int8  1.89 chunks/s  recall@10  91.0%  cos 0.9809  <- 9% recall for 2.1x
-# int8 is a lever to pull only if throughput is critical AND the 9% is shown
-# not to matter end to end. It is not free and must not be treated as such.
+# fp16 by default -- for MEMORY, not speed.
+#
+# CORRECTION. This previously read "free 1.36x" on the strength of an
+# earlier run recording fp32 0.90 and fp16 1.22 chunks/s. Re-measured at the
+# same settings (bench/bench_embed_model.py, 400 chunks, batch 16):
+#
+#   fp32  5.21 chunks/s  recall@10 100.0%  cos 1.0000  (reference)
+#   fp16  3.94 chunks/s  recall@10 100.0%  cos 1.0000  <- 0.76x, SLOWER
+#   int8  9.70 chunks/s  recall@10  90.5%  cos 0.9831  <- 1.86x for -9.5%
+#
+# fp16 is 24% slower than fp32 here, not 36% faster: the old claim was
+# inverted. The ratio is machine-dependent -- CPUs have no native fp16
+# kernels, so ORT inserts Cast nodes, and fp16 only wins where memory
+# bandwidth, not compute, is the limit. The original run was ~5.8x slower in
+# absolute terms, which is consistent with a bandwidth-bound machine. int8's
+# ratio reproduced (1.86x vs 1.89x, recall 90.5% vs 91.0%), so the harness
+# is sound; it is the fp16 comparison specifically that was wrong.
+#
+# fp16 still ships, because the binding constraint is RAM, not throughput
+# (bench/bench_colocated_rss.py, arena off): fp16 peaks at 439 MB against
+# fp32's 734 MB, and only fp16 fits a 512 MB instance.
+#
+# int8 remains a lever to pull only if throughput is critical AND the ~9.5%
+# recall loss is shown not to matter end to end. It is not free.
 ONNX_FILE = "onnx/model_fp16.onnx"
 EMBED_DIM = 768
 
@@ -68,7 +86,26 @@ class OnnxEmbedder:
         onnx_file: str = ONNX_FILE,
         max_tokens: int = MAX_SEQUENCE_TOKENS,
         threads: int | None = None,
+        enable_mem_arena: bool = False,
     ):
+        """
+        `enable_mem_arena` is the difference between deployable and not.
+
+        ONNX Runtime's CPU arena pre-allocates and never returns memory, and
+        on this model it dominates the process. Measured, fp16, 200 real
+        chunks at batch 16 (bench/bench_colocated_rss.py):
+
+            arena on    peak RSS 1,809 MB    3.40 chunks/s    55 ms/query
+            arena off   peak RSS   439 MB    2.33 chunks/s    99 ms/query
+
+        There is no middle setting: `arena_extend_strategy` changed nothing
+        and disabling `mem_pattern` only reached 835 MB. So it is 439 MB or
+        it does not fit a 512 MB instance, which makes the 1.46x throughput
+        the price of deploying at all.
+
+        It defaults to off for that reason. Benchmarks that want to measure
+        the arena pass True explicitly.
+        """
         import onnxruntime as ort
         from huggingface_hub import hf_hub_download
         from tokenizers import Tokenizer
@@ -81,6 +118,7 @@ class OnnxEmbedder:
 
         opts = ort.SessionOptions()
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        opts.enable_cpu_mem_arena = enable_mem_arena
         if threads:
             opts.intra_op_num_threads = threads
         self._session = ort.InferenceSession(
@@ -235,3 +273,14 @@ def binary_quantize(vectors: np.ndarray, centroid: np.ndarray | None = None) -> 
 def bits_to_sql(packed_row: np.ndarray, dim: int) -> str:
     """Render one packed row as a Postgres bit-string literal."""
     return "".join(f"{byte:08b}" for byte in packed_row)[:dim]
+
+
+def vector_to_sql(vec: np.ndarray) -> str:
+    """
+    Render one vector as a Postgres halfvec literal.
+
+    Indexing and query embedding must format vectors identically: the query
+    is compared against stored rows, so a difference in precision here is a
+    difference in ranking. Both paths call this.
+    """
+    return "[" + ",".join(f"{x:.6f}" for x in vec) + "]"

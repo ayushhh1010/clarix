@@ -60,7 +60,11 @@ async def test_unknown_job_kind_fails_the_job_rather_than_the_worker(
             {"i": REPO},
         )
     ).one()
-    assert status.status == "queued"
+    # Dead, not queued. This assertion used to read "queued", encoding the
+    # behaviour rather than the intent: a job kind with no handler will
+    # still have none on the next attempt, so retrying it twice more only
+    # delays the error.
+    assert status.status == "dead"
     assert "no handler" in status.last_error
 
 
@@ -109,12 +113,22 @@ async def test_an_unsafe_url_fails_the_job_without_cloning(
     await async_session.commit()
 
     assert await run_once(async_session, config, FakeEmbedder(), chunker) is True
-    err = (
+    row = (
         await async_session.execute(
-            text("SELECT last_error FROM ingest_jobs WHERE repo_id = :i"), {"i": rid}
+            text("SELECT status, last_error FROM ingest_jobs WHERE repo_id = :i"),
+            {"i": rid},
         )
-    ).scalar_one()
-    assert "not permitted" in err or "scheme" in err
+    ).one()
+    assert "not permitted" in row.last_error or "scheme" in row.last_error
+    # The status, not just the message. This assertion is the point of the
+    # test: an earlier version checked only the text, so it passed while the
+    # job was in fact being requeued for three attempts despite the
+    # docstring above -- the comment and the behaviour had diverged and
+    # nothing noticed.
+    assert row.status == "dead", (
+        f"an unsafe URL was left {row.status!r} for retry; it will still be "
+        "unsafe next time"
+    )
 
 
 async def test_a_job_for_a_deleted_repository_is_a_no_op(

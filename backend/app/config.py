@@ -46,6 +46,29 @@ class Settings(BaseSettings):
     embedding_api_key: str = ""
     embedding_model_id: str = "jinaai/jina-embeddings-v2-base-code"
 
+    # ── Indexer process (python -m app.indexing) ─────────────
+    #
+    # Serves the endpoint above and runs the indexing worker. Separate from
+    # the API because it holds the model: measured 439 MB peak against the
+    # API's 59 MB, and the two together exceed a 512 MB instance.
+    indexer_port: int = 8081
+    indexer_run_worker: bool = True
+
+    # How many chunks the worker embeds per lock acquisition. The indexer
+    # shares one model between the worker and the query endpoint, so this
+    # sets the worst case a query can wait behind indexing.
+    #
+    # 1, because batching buys nothing here. Measured on 200 real chunks
+    # with the arena off (bench/bench_embed_batch.py):
+    #
+    #     batch  1   2.45 chunks/s   median hold 0.25s   p95  1.11s
+    #     batch 16   2.41 chunks/s   median hold 4.84s   p95 16.17s
+    #
+    # Throughput is flat and hold time scales linearly: a batch of one has
+    # no padding at all, which is the only thing batching was buying back.
+    # Raise it only if a measurement on the target machine says otherwise.
+    indexer_embed_batch: int = 1
+
     # ── Google OAuth only (Gemini uses gemini_api_key above) ──
     google_api_key: str = ""
 

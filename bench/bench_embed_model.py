@@ -53,7 +53,7 @@ def exact_topk(corpus: np.ndarray, queries: np.ndarray, k: int) -> np.ndarray:
 
 
 def recall_at_k(truth: np.ndarray, got: np.ndarray, k: int) -> float:
-    return sum(len(set(t[:k]) & set(g[:k])) for t, g in zip(truth, got)) / (len(truth) * k)
+    return sum(len(set(t[:k]) & set(g[:k])) for t, g in zip(truth, got, strict=True)) / (len(truth) * k)
 
 
 def main() -> int:
@@ -66,9 +66,8 @@ def main() -> int:
     ap.add_argument("--json-out", type=Path)
     args = ap.parse_args()
 
-    from bench_quantization import collect_chunks
-
     from app.indexing.embedder import OnnxEmbedder
+    from bench_quantization import collect_chunks
 
     chunks = collect_chunks(args.chunks)
     texts = [c.content for c in chunks][: args.chunks]
