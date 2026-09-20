@@ -82,12 +82,6 @@ class HFTokenCounter:
             return 0
         return len(self._tok.encode(text, add_special_tokens=False).ids)
 
-    def count_batch(self, texts: list[str]) -> list[int]:
-        if not texts:
-            return []
-        encoded = self._tok.encode_batch(texts, add_special_tokens=False)
-        return [len(e.ids) for e in encoded]
-
 
 @lru_cache(maxsize=4)
 def get_token_counter(model_id: str = DEFAULT_TOKENIZER) -> TokenCounter:

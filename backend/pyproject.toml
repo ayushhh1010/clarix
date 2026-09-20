@@ -52,9 +52,26 @@ dependencies = [
     # Accurate token accounting. `len(text)//4` under-counts code badly; see
     # bench/bench_token_estimate.py. This is the real tokenizer, ~2 MB.
     "tokenizers==0.22.1",
+
+    # Rate limiting (app/rate_limit.py, app/main.py).
+    "slowapi==0.1.9",
+    "typing-extensions==4.15.0",
 ]
 
 [project.optional-dependencies]
+# -------------------------------------------------------------------------
+# Backward-compatibility tests only.
+#
+# The v1 modules are gone; these remain solely so
+# tests/test_security.py can mint a passlib hash and a python-jose token
+# and prove the migrated code still verifies both. Nothing in app/ imports
+# them, which tests/test_imports.py enforces at the import hook.
+# -------------------------------------------------------------------------
+compat-tests = [
+    "python-jose[cryptography]==3.3.0",
+    "passlib[bcrypt]==1.7.4",
+]
+
 # -------------------------------------------------------------------------
 # Indexer. Runs on Modal (serverless, scale-to-zero) or as a separate local
 # process -- never inside the API container.
@@ -83,6 +100,10 @@ dev = [
     "ruff==0.13.2",
     "mypy==1.18.2",
     "psutil==7.1.0",
+    # PostgreSQL 18.6 + pgvector 0.8.6 as a wheel. The schema and retrieval
+    # tests run real SQL against a real server; a suite that needs a Docker
+    # daemon is a suite that gets skipped.
+    "embedded-postgres==18.6.1",
 ]
 
 [build-system]
@@ -101,8 +122,35 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "S"]
 ignore = ["E501", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
-"bench/**" = ["S101", "S603", "S607"]
+# Tests: asserts are the point; pseudo-random is test data, not crypto;
+# SQL is built from literals in fixtures; teardown swallows errors on purpose
+# so a cleanup failure cannot mask the real test failure.
+# S105/S106: test fixtures deliberately contain literal secrets and
+# pad tokens; they are the subject of the test, not a leak.
+"tests/**" = ["S101", "S105", "S106", "S108", "S311", "S603", "S608", "S110", "SIM105"]
+"bench/**" = ["S101", "S603", "S607", "S311", "S608"]
+"alembic/**" = ["SIM103"]
+# See the NOTE at the top of the SQL constants: only module-level
+# constants are interpolated; all user input uses bind parameters.
+# S608 in these three: the f-strings interpolate only module-level
+# constants (column lists, EMBED_DIM, a literal filter clause). Every value
+# that originates outside the module -- query text, repo ids, chunk fields,
+# job kinds -- is passed as a bind parameter and never formatted into SQL.
+# An inline suppression is not usable: ruff reports the opening `f"""` line,
+# so the comment would land inside the string literal and corrupt the query.
+"app/retrieval/hybrid.py" = ["S608"]
+"app/indexing/pipeline.py" = ["S608"]
+"app/indexing/queue.py" = ["S608"]
+# S105 flags any name containing "token"/"secret" assigned a literal.
+# These are a default placeholder (rejected in production by
+# security._check_secret), two OAuth endpoint URLs, and the literal
+# "bearer" -- none is a credential.
+"app/config.py" = ["S105"]
+"app/routes/auth.py" = ["S105"]
+"app/schemas.py" = ["S105"]
+# Routers are imported after `app` is constructed to avoid a circular
+# import; E402 is the cost of that ordering.
+"app/main.py" = ["E402"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
