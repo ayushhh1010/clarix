@@ -14,16 +14,17 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import get_settings
+from app.db_url import normalise_database_url
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Ensure we use asyncpg driver even if Railway/PaaS injects standard postgres:// url
-db_url = settings.database_url
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
-elif db_url.startswith("postgresql://"):
-    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+# Accept the URL in whatever form the provider handed out: `postgres://`
+# from Heroku-style PaaS, `postgresql://?sslmode=require&channel_binding=...`
+# from Neon and Supabase, or an already-qualified asyncpg URL. asyncpg
+# rejects libpq's spelling outright -- "connect() got an unexpected
+# keyword argument 'sslmode'" -- so the translation is not cosmetic.
+db_url = normalise_database_url(settings.database_url, driver="asyncpg")
 
 engine = create_async_engine(
     db_url,
