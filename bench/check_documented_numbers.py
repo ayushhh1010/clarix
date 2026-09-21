@@ -45,6 +45,17 @@ def colocated(label: str, field: str) -> float:
     raise KeyError(label)
 
 
+def linux_mem(onnx: str, cap: int, field: str) -> float:
+    for row in load("memory_linux.json")["results"]:
+        if row["onnx_file"].endswith(onnx) and row["max_tokens"] == cap and row["worker"]:
+            return row[field]
+    raise KeyError((onnx, cap))
+
+
+def shipped(artifact: str, config: str, metric: str) -> float:
+    return load(artifact)["configs"][config][metric]["value"]
+
+
 def repro(config: str, metric: str) -> float:
     return load("eval_reproducibility.json")["configs"][config][metric]["spread"]
 
@@ -120,19 +131,17 @@ CHECKS: list[tuple[str, str, float, float]] = [
      load("embed_model.json")["variants"]["int8"]["chunks_per_sec"], 0.005),
 
     # --- deployability: the numbers the topology rests on -----------------
-    ("BENCHMARKS.md",
-     "| **indexer: fp16, arena off** | **439 MB** | 2.33 | 99 ms | **yes** |",
+    ("BENCHMARKS.md", "| indexer: fp16, arena off | 439 MB | 2.33 | 99 ms |",
      colocated("fp16, arena off", "peak_mb"), 0.5),
-    ("BENCHMARKS.md",
-     "| **indexer: fp16, arena off** | **439 MB** | 2.33 | 99 ms | **yes** |",
+    ("BENCHMARKS.md", "| indexer: fp16, arena off | 439 MB | 2.33 | 99 ms |",
      colocated("fp16, arena off", "chunks_per_sec"), 0.005),
-    ("BENCHMARKS.md", "| indexer + API in one process | 485 MB | 2.24 | 98 ms | 27 MB spare |",
+    ("BENCHMARKS.md", "| indexer + API in one process | 485 MB | 2.24 | 98 ms |",
      colocated("fp16, arena off + API", "peak_mb"), 0.5),
-    ("BENCHMARKS.md", "| fp16, arena on | 1,809 MB | 3.40 | 55 ms | no |",
+    ("BENCHMARKS.md", "| fp16, arena on | 1,809 MB | 3.40 | 55 ms |",
      colocated("fp16, arena on", "chunks_per_sec"), 0.005),
-    ("BENCHMARKS.md", "| fp32, arena off | 734 MB | 3.24 | 21 ms | no |",
+    ("BENCHMARKS.md", "| fp32, arena off | 734 MB | 3.24 | 21 ms |",
      colocated("fp32, arena off", "chunks_per_sec"), 0.005),
-    ("BENCHMARKS.md", "| API alone | 59.1 MB | - | - | yes |",
+    ("BENCHMARKS.md", "| API alone | 59.1 MB | - | - |",
      colocated("fp16, arena off + API", "api_only_mb"), 0.05),
     ("backend/app/indexing/service.py", "app.main (API) alone                 59.1 MB",
      colocated("fp16, arena off + API", "api_only_mb"), 0.05),
@@ -147,6 +156,25 @@ CHECKS: list[tuple[str, str, float, float]] = [
      batch(16, "median_hold_s"), 0.005),
     ("backend/app/config.py", "batch  1   2.45 chunks/s   median hold 0.25s",
      batch(1, "median_hold_s"), 0.005),
+
+    # --- the memory numbers the deployment topology now rests on ----------
+    # These replace the Windows figures that predicted a fit and got an OOM.
+    ("BENCHMARKS.md", "| fp16 | 512 | 1,135 MB | −598 MB | no |",
+     linux_mem("model_fp16.onnx", 512, "peak_mb"), 1.0),
+    ("BENCHMARKS.md", "| int8 | 1024 | 619 MB | −82 MB | no |",
+     linux_mem("model_quantized.onnx", 1024, "peak_mb"), 1.0),
+    ("BENCHMARKS.md", "| int8 | 512 | 469 MB | 68 MB | yes |",
+     linux_mem("model_quantized.onnx", 512, "peak_mb"), 1.0),
+    ("BENCHMARKS.md", "| **int8** | **384** | **432 MB** | **105 MB** | **yes** |",
+     linux_mem("model_quantized.onnx", 384, "peak_mb"), 1.0),
+
+    # --- what the shipped embedding config costs --------------------------
+    ("BENCHMARKS.md", "| semantic | ROUTED | mrr | 0.707 | 0.696 | -0.010 |",
+     shipped("retrieval_v1_TEST_int8_t384.json", "ROUTED (shipping)", "mrr"), 0.0005),
+    ("BENCHMARKS.md", "| identifier | ROUTED | recall@10 | 0.997 | 0.997 | +0.000 |",
+     shipped("symbol_v1_TEST_int8_t384.json", "ROUTED (shipping)", "recall@10"), 0.0005),
+    ("BENCHMARKS.md", "| identifier | dense only | mrr | 0.774 | 0.797 | +0.023 |",
+     shipped("symbol_v1_TEST_int8_t384.json", "dense only", "mrr"), 0.0005),
 
     # --- eval reproducibility: the caveat on the last digit ---------------
     ("BENCHMARKS.md", "| dense only | recall@10 | 0.0067 |",

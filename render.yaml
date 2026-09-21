@@ -1,12 +1,25 @@
 # Render blueprint: two services, because they have different shapes.
 #
 #   api      thin, always-on, 59.1 MB import RSS. Holds no model.
-#   indexer  holds the ONNX model. 439 MB peak RSS, measured
-#            (bench/bench_colocated_rss.py). Serves /embed for the API's
+#   indexer  holds the ONNX model. 432 MB peak RSS on Linux with the
+#            worker running and a cold download, against the 537 MB
+#            (512 MiB) free-tier cap -- measured by
+#            bench/bench_service_memory.py. Serves /embed for the API's
 #            query path and runs the indexing worker.
 #
-# They are separate because colocating them peaks at 485 MB on a 512 MB
-# instance -- 27 MB of headroom, which is no room to serve requests. The indexer is
+# They are separate because the API is 59 MB and the model is not.
+#
+# The indexer runs int8 weights at a 384-token cap. fp16 does NOT fit at
+# any cap: it needs ~1 GB merely to load, because CPUs have no fp16
+# kernels and ONNX Runtime upcasts every weight to fp32. An earlier
+# version of this file shipped fp16 and Render killed it with
+# "Out of memory (used over 512Mi)". The quality cost of int8 is measured
+# end to end in BENCHMARKS section 8: identifier queries unchanged,
+# semantic MRR 0.707 -> 0.696.
+#
+# On an instance with more memory, set EMBEDDING_ONNX_FILE to
+# onnx/model_fp16.onnx and EMBEDDING_MAX_TOKENS to 2048, and bump
+# INDEX_VERSION so the stored vectors are rebuilt. The indexer is
 # sized right at the limit even alone: 439 MB of 512 MB, ~73 MB headroom.
 #
 # Both install from pyproject.toml. There is no requirements.txt: it had
@@ -54,6 +67,13 @@ services:
           name: clarix-indexer
           type: web
           envVarKey: EMBEDDING_API_KEY
+      # Must match the indexer's, or the API refuses its vectors.
+      - key: EMBEDDING_ONNX_FILE
+        value: onnx/model_quantized.onnx
+      - key: EMBEDDING_MAX_TOKENS
+        value: "384"
+      - key: EMBEDDING_MODEL_ID
+        value: jinaai/jina-embeddings-v2-base-code
       - key: DATABASE_URL
         sync: false
       - key: SECRET_KEY
@@ -94,3 +114,13 @@ services:
       # 306 MB before it can answer.
       - key: HF_HOME
         value: /opt/render/project/.cache/huggingface
+      # These three form the embedding identity. The API composes the same
+      # string and refuses to use vectors from a different one, so both
+      # services must agree -- a mismatch disables dense retrieval rather
+      # than silently ranking on incomparable vectors.
+      - key: EMBEDDING_ONNX_FILE
+        value: onnx/model_quantized.onnx
+      - key: EMBEDDING_MAX_TOKENS
+        value: "384"
+      - key: EMBEDDING_MODEL_ID
+        value: jinaai/jina-embeddings-v2-base-code

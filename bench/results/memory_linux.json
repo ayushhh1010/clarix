@@ -1,0 +1,61 @@
+{
+  "limit_mb": 537.0,
+  "platform": "linux",
+  "results": [
+    {
+      "onnx_file": "onnx/model_quantized.onnx",
+      "max_tokens": 512,
+      "worker": true,
+      "threads": 1,
+      "after_load_mb": 385.0,
+      "after_query_mb": 389.5,
+      "after_long_chunk_mb": 464.2,
+      "peak_mb": 468.8,
+      "cold_download": true
+    },
+    {
+      "onnx_file": "onnx/model_quantized.onnx",
+      "max_tokens": 512,
+      "worker": true,
+      "threads": 0,
+      "after_load_mb": 379.8,
+      "after_query_mb": 385.1,
+      "after_long_chunk_mb": 457.5,
+      "peak_mb": 463.6,
+      "cold_download": true
+    },
+    {
+      "onnx_file": "onnx/model_quantized.onnx",
+      "max_tokens": 384,
+      "worker": true,
+      "threads": 1,
+      "after_load_mb": 374.7,
+      "after_query_mb": 379.6,
+      "after_long_chunk_mb": 427.5,
+      "peak_mb": 431.9,
+      "cold_download": true
+    },
+    {
+      "onnx_file": "onnx/model_quantized.onnx",
+      "max_tokens": 1024,
+      "worker": true,
+      "threads": 1,
+      "after_load_mb": 372.0,
+      "after_query_mb": 376.7,
+      "after_long_chunk_mb": 378.3,
+      "peak_mb": 619.1,
+      "cold_download": true
+    },
+    {
+      "onnx_file": "onnx/model_fp16.onnx",
+      "max_tokens": 512,
+      "worker": true,
+      "threads": 1,
+      "after_load_mb": 1000.2,
+      "after_query_mb": 1005.5,
+      "after_long_chunk_mb": 1067.3,
+      "peak_mb": 1134.8,
+      "cold_download": true
+    }
+  ]
+}

@@ -30,7 +30,7 @@ an "fp16 is 36% faster" claim that turned out to be 24% *slower*, and a
          │
          ▼
   ┌─────────────────┐        ┌──────────────────────────┐
-  │   API (59 MB)   │        │    Indexer (439 MB)      │
+  │   API (59 MB)   │        │    Indexer (432 MB)      │
   │                 │        │                          │
   │  auth           │ POST   │  /embed  ── query vectors│
   │  retrieval  ────┼───────▶│                          │
@@ -45,10 +45,18 @@ an "fp16 is 36% faster" claim that turned out to be 24% *slower*, and a
 ```
 
 **Two processes, because they have different shapes.** The API is always-on
-and holds no model: 59 MB of import RSS. The indexer holds 306 MB of ONNX
-weights and peaks at 439 MB. Putting them together peaks at 485 MB against a
-512 MB instance — 27 MB of headroom, which is not enough to serve requests.
-That split is measured, not assumed: `bench/bench_colocated_rss.py`.
+and holds no model: 59 MB of import RSS. The indexer holds the ONNX weights
+and peaks at 432 MB, measured on Linux with the worker running and a cold
+model download (`bench/bench_service_memory.py`).
+
+The indexer runs int8 weights at a 384-token cap, and that is not a detail —
+fp16 needs about a gigabyte just to load, because CPUs have no fp16 kernels
+and ONNX Runtime upcasts every weight to fp32. An earlier version shipped
+fp16 on the strength of a measurement taken on Windows against a cached
+model with the worker off; the container was killed for exceeding its
+memory limit. The quality cost of int8 was then measured end to end rather
+than inferred: identifier queries are unchanged, semantic MRR moves 0.707 →
+0.696. Both the mistake and the correction are in BENCHMARKS.md section 8.
 
 The indexer serves query embeddings *and* runs the indexing worker, because
 the worker already holds the model, so answering queries from it is free.
@@ -68,7 +76,8 @@ plus one chunk per method; decorators and leading comments stay attached to
 what they decorate (68.4% → **100%** decorator preservation against the v1
 line-window chunker).
 
-Each chunk is embedded locally with `jina-embeddings-v2-base-code` and
+Each chunk is embedded locally with `jina-embeddings-v2-base-code` (int8,
+384-token cap — see Deployment) and
 stored twice: as `halfvec(768)` for exact scoring and as `bit(768)` for
 approximate search. Ingestion streams — chunks are embedded and flushed in
 batches rather than accumulated — because v1 materialised every vector as
@@ -191,7 +200,8 @@ cd frontend && npm install && npm run dev
 ## Deployment
 
 `render.yaml` defines both services. The indexer needs an instance with at
-least 512 MB and sits at 439 MB of it — comfortable, but not roomy. Set
+least 512 MB and peaks at 432 MB of it — 105 MB of headroom, which matters
+because the same measurement varies by ~30 MB between runs. Set
 `EMBEDDING_API_KEY` to the same value on both services; the indexer refuses
 to start in production without one, since an open model endpoint is free
 compute for whoever finds it.
@@ -209,7 +219,7 @@ needs.
 cd backend && pytest -q
 ```
 
-**415 tests, no Docker required.** PostgreSQL 18.6 with pgvector 0.8.6 comes
+**421 tests, no Docker required.** PostgreSQL 18.6 with pgvector 0.8.6 comes
 from the `embedded-postgres` wheel, so schema and retrieval tests run real
 SQL against a real server anywhere `pip install` works — a suite that needs
 a daemon is a suite that gets skipped.

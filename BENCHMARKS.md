@@ -647,18 +647,100 @@ against the real ASGI app.
 
 `bench/bench_colocated_rss.py`, 200 real chunks, against a 512 MB cap:
 
-| configuration | peak RSS | chunks/s | query | fits |
-|---|---:|---:|---:|:--:|
-| API alone | 59.1 MB | - | - | yes |
-| **indexer: fp16, arena off** | **439 MB** | 2.33 | 99 ms | **yes** |
-| indexer + API in one process | 485 MB | 2.24 | 98 ms | 27 MB spare |
-| fp16, arena on | 1,809 MB | 3.40 | 55 ms | no |
-| fp32, arena off | 734 MB | 3.24 | 21 ms | no |
+| configuration | peak RSS | chunks/s | query |
+|---|---:|---:|---:|
+| API alone | 59.1 MB | - | - |
+| indexer: fp16, arena off | 439 MB | 2.33 | 99 ms |
+| indexer + API in one process | 485 MB | 2.24 | 98 ms |
+| fp16, arena on | 1,809 MB | 3.40 | 55 ms |
+| fp32, arena off | 734 MB | 3.24 | 21 ms |
 
-Colocating the API with the model *technically* fits, at 27 MB of headroom.
-That is not enough to serve requests under load, so the model lives with
-the worker instead -- which costs nothing extra, because the worker already
-holds it.
+The API is 59 MB and the model is not, so they are separate processes.
+That conclusion stands.
+
+**The absolute figures in this table do not predict a container, and I
+used them as though they did.** See the next section.
+
+### The measurement that was wrong, and what replaced it
+
+On the strength of the 439 MB above I wrote that the indexer fitted a
+512 MB instance with 73 MB of headroom. Render disagreed:
+
+    ==> Out of memory (used over 512Mi)
+
+Three things were wrong with the measurement, all of them methodology
+rather than arithmetic:
+
+  It was taken on **Windows**, with psutil, against a Linux cgroup limit.
+  Host RSS on one operating system is not a prediction of a memory
+  ceiling on another.
+
+  The model was **already cached**. Render's filesystem is ephemeral, so
+  every cold start downloads the weights again, and that download is part
+  of the peak.
+
+  The **worker was not running**. It is the thing the service exists to
+  run, and it loads the tree-sitter chunker and the database stack on top
+  of the model.
+
+`bench/bench_service_memory.py` measures the real ASGI application on
+Linux, reading `VmHWM` from `/proc` -- the kernel's own high-water mark --
+with the worker enabled and the download forced. Against the 537 MB
+(512 MiB) cap:
+
+| model | cap | peak RSS | headroom | fits |
+|---|---:|---:|---:|:--:|
+| fp16 | 512 | 1,135 MB | −598 MB | no |
+| int8 | 1024 | 619 MB | −82 MB | no |
+| int8 | 512 | 469 MB | 68 MB | yes |
+| **int8** | **384** | **432 MB** | **105 MB** | **yes** |
+
+**fp16 cannot be made to fit at any truncation cap**: it needs about a
+gigabyte merely to load. CPUs have no native fp16 kernels, so ONNX
+Runtime upcasts every weight to fp32 -- 306 MB on disk becomes ~1 GB
+resident. That is also an independent confirmation of section 6: the
+reason fp16 measured *slower* than fp32 is the same reason it is larger.
+
+Everything above the load figure is attention, which is O(sequence²).
+That makes the truncation cap the second lever, and the only other one.
+
+384 rather than 512 because the same configuration measured 503 MB on one
+run and 469 MB on another -- about 30 MB of run-to-run variance, which
+eats most of a 68 MB margin.
+
+### What int8 actually costs, measured rather than inferred
+
+The obvious objection to int8 is section 6, which records **90.5%
+recall@10** for it. That number is agreement with *fp32's own ranking*,
+not task accuracy, and using it to predict retrieval quality would have
+been the same category error as using Windows RSS to predict a cgroup.
+
+So it was measured end to end on both held-out test splits, at the
+shipped truncation cap:
+
+| split | configuration | metric | fp16@2048 | int8@384 | delta |
+|---|---|---|---:|---:|---:|
+| identifier | dense only | recall@10 | 0.910 | 0.917 | +0.007 |
+| identifier | dense only | mrr | 0.774 | 0.797 | +0.023 |
+| identifier | ROUTED | recall@10 | 0.997 | 0.997 | +0.000 |
+| identifier | ROUTED | mrr | 0.958 | 0.957 | -0.000 |
+| semantic | dense only | recall@10 | 0.913 | 0.904 | -0.010 |
+| semantic | dense only | mrr | 0.729 | 0.718 | -0.012 |
+| semantic | ROUTED | recall@10 | 0.911 | 0.902 | -0.010 |
+| semantic | ROUTED | mrr | 0.707 | 0.696 | -0.010 |
+
+Identifier queries do not suffer at all -- dense-only actually improves,
+and the shipping router is unchanged within noise. Semantic queries cost
+**about 0.011 MRR**, roughly half of what routing already trades away on
+that split for its identifier gains.
+
+The truncation cap is close to free: semantic ROUTED MRR is 0.696 at a
+384-token cap against 0.693 at 512. Chunks are capped at 1,024 tokens by
+the chunker and the median is 117, so most are untouched either way.
+
+So the proxy metric overstated the cost by roughly an order of magnitude.
+9.5% of top-10 results change, and almost none of the ones that change
+were the right answer.
 
 Verified end to end against the running service: a query embedded over HTTP
 is **byte-identical** to what the ingestion path stores for the same text,

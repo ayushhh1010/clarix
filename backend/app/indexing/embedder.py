@@ -32,6 +32,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from app.embedding_id import embedding_identity
+
 logger = logging.getLogger(__name__)
 
 MODEL_ID = "jinaai/jina-embeddings-v2-base-code"
@@ -59,6 +61,15 @@ MODEL_ID = "jinaai/jina-embeddings-v2-base-code"
 #
 # int8 remains a lever to pull only if throughput is critical AND the ~9.5%
 # recall loss is shown not to matter end to end. It is not free.
+# NOTE: this module default is the *benchmark reference*, not what the
+# application runs. The app builds the embedder from `Settings`
+# (`embedding_onnx_file`, `embedding_max_tokens`), which default to
+# int8 at a 512-token cap because that is what fits a 512 MiB instance.
+#
+# The two differ on purpose. Committed artifacts under bench/results were
+# measured against fp16 here, and changing this default would silently
+# re-point every benchmark that calls `OnnxEmbedder()` with no arguments
+# at a different model, invalidating numbers the checker verifies.
 ONNX_FILE = "onnx/model_fp16.onnx"
 EMBED_DIM = 768
 
@@ -111,7 +122,9 @@ class OnnxEmbedder:
         from tokenizers import Tokenizer
 
         self.model_id = model_id
+        self.onnx_file = onnx_file
         self.max_tokens = max_tokens
+        self.identity = embedding_identity(model_id, onnx_file, max_tokens)
         self.stats = EmbedStats()
 
         model_path = hf_hub_download(model_id, onnx_file)

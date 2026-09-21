@@ -74,6 +74,9 @@ class FakeInner:
     """
 
     model_id = "fake/model"
+    # Mirrors OnnxEmbedder: the service reads `identity`, not `model_id`,
+    # when advertising what produced the vectors.
+    identity = "fake/model|model_quantized|512"
 
     def __init__(self, delay: float = 0.0):
         self.delay = delay
@@ -115,9 +118,11 @@ class Settings:
     app_env = "test"
     embedding_api_key = ""
     embedding_model_id = "fake/model"
+    embedding_onnx_file = "onnx/model_quantized.onnx"
+    embedding_max_tokens = 512
     indexer_run_worker = False
     worker_dir = "./data/work"
-    index_version = 1
+    index_version = 2
     index_batch_size = 16
 
 
@@ -152,13 +157,15 @@ async def test_query_embedder_consumes_the_real_endpoint(fake):
     async with await _client(app) as http, app.router.lifespan_context(app):
         embedder = HttpQueryEmbedder(
             endpoint="http://indexer/embed",
-            expected_model="fake/model",
+            # The composite identity, which is what the endpoint now
+            # advertises: repo id alone cannot distinguish fp16 from int8.
+            expected_model="fake/model|model_quantized|512",
             client=http,
         )
         vectors = await embedder.embed_query("how does retry work")
 
     assert vectors is not None, "the client refused a well-formed response"
-    assert vectors.model_id == "fake/model"
+    assert vectors.model_id == "fake/model|model_quantized|512"
     # bits must be a bit(768) literal: exactly EMBED_DIM characters of 0/1.
     assert len(vectors.bits) == EMBED_DIM
     assert set(vectors.bits) <= {"0", "1"}
@@ -188,6 +195,83 @@ async def test_model_id_mismatch_is_refused_end_to_end(fake):
             assert await embedder.embed_query("anything") is None
 
 
+# --- the identity that guards against mixed vector spaces ------------------
+
+def test_identity_distinguishes_variants_of_the_same_model():
+    """
+    The repository id alone cannot tell fp16 vectors from int8 ones.
+
+    They are the same Hugging Face model and produce different vectors, so
+    an API on one variant querying an index built on the other returns
+    confident nonsense with nothing raised anywhere.
+    """
+    from app.embedding_id import embedding_identity
+
+    repo = "jinaai/jina-embeddings-v2-base-code"
+    fp16 = embedding_identity(repo, "onnx/model_fp16.onnx", 2048)
+    int8 = embedding_identity(repo, "onnx/model_quantized.onnx", 512)
+    assert fp16 != int8
+
+    # The truncation cap changes the vectors too, so it must change the id.
+    assert embedding_identity(repo, "onnx/model_quantized.onnx", 512) !=         embedding_identity(repo, "onnx/model_quantized.onnx", 1024)
+
+    # Same inputs, same id -- it has to be stable to be comparable.
+    assert int8 == embedding_identity(repo, "onnx/model_quantized.onnx", 512)
+
+
+async def test_embed_reports_variant_in_model_id(fake):
+    """The endpoint must advertise the variant, not just the repo id."""
+    app = build_app(Settings())
+    async with await _client(app) as http, app.router.lifespan_context(app):
+        body = (await http.post("/embed", json={"texts": ["a"]})).json()
+    assert body["model_id"] == "fake/model|model_quantized|512"
+
+
+async def test_a_variant_mismatch_disables_dense_retrieval(fake):
+    """
+    An API expecting fp16 against an int8 endpoint must refuse, not rank.
+
+    This is the whole point of the composite identity: before it, both
+    sides reported the same repository id and the mismatch was invisible.
+    """
+    from app.embedding_id import embedding_identity
+    from app.retrieval.query_embedder import HttpQueryEmbedder
+
+    app = build_app(Settings())          # serves int8 @ 512
+    async with await _client(app) as http, app.router.lifespan_context(app):
+        wrong = HttpQueryEmbedder(
+            endpoint="http://indexer/embed",
+            expected_model=embedding_identity("fake/model", "onnx/model_fp16.onnx", 2048),
+            client=http,
+        )
+        assert await wrong.embed_query("anything") is None, (
+            "a different ONNX variant was accepted; vectors would be mixed"
+        )
+
+        right = HttpQueryEmbedder(
+            endpoint="http://indexer/embed",
+            expected_model=embedding_identity(
+                "fake/model", "onnx/model_quantized.onnx", 512
+            ),
+            client=http,
+        )
+        assert await right.embed_query("anything") is not None
+
+
+def test_build_query_embedder_composes_the_same_identity():
+    """
+    The API and the indexer must derive the identity from the same
+    settings, or the check compares two things nobody kept in step.
+    """
+    from app.retrieval.query_embedder import build_query_embedder
+
+    class S(Settings):
+        embedding_endpoint = "http://indexer"
+
+    built = build_query_embedder(S())
+    assert built.expected_model == "fake/model|model_quantized|512"
+
+
 # --- endpoint behaviour ----------------------------------------------------
 
 async def test_embed_returns_both_literal_forms(fake):
@@ -196,7 +280,7 @@ async def test_embed_returns_both_literal_forms(fake):
         r = await http.post("/embed", json={"texts": ["alpha", "beta beta"]})
     assert r.status_code == 200
     body = r.json()
-    assert body["model_id"] == "fake/model"
+    assert body["model_id"] == "fake/model|model_quantized|512"
     assert body["dim"] == EMBED_DIM
     assert len(body["vectors"]) == len(body["bits"]) == 2
     assert all(len(b) == EMBED_DIM for b in body["bits"])
@@ -313,7 +397,7 @@ async def test_health_reports_model_and_worker(fake):
     async with await _client(app) as http, app.router.lifespan_context(app):
         body = (await http.get("/health")).json()
     assert body["status"] == "healthy"
-    assert body["model_id"] == "fake/model"
+    assert body["model_id"] == "fake/model|model_quantized|512"
     assert body["dim"] == EMBED_DIM
     assert body["worker_running"] is False  # disabled in Settings
 

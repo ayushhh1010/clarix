@@ -82,7 +82,9 @@ CONFIGS: dict[str, dict] = {
 BASELINE = "dense only"  # what v1 did
 
 
-def embed_cached(texts: list[str], cache_path: pathlib.Path, batch: int) -> np.ndarray:
+def embed_cached(texts: list[str], cache_path: pathlib.Path, batch: int,
+                 onnx_file: str | None = None,
+                 max_tokens: int | None = None) -> np.ndarray:
     """Embed, reusing any cached vectors keyed by content hash."""
     keys = [hashlib.sha256(t.encode("utf-8", "replace")).hexdigest() for t in texts]
 
@@ -99,7 +101,12 @@ def embed_cached(texts: list[str], cache_path: pathlib.Path, batch: int) -> np.n
         from app.indexing.embedder import OnnxEmbedder
 
         print(f"  embedding {len(missing_idx):,} new texts ...", flush=True)
-        emb = OnnxEmbedder()
+        kw = {}
+        if onnx_file:
+            kw["onnx_file"] = onnx_file
+        if max_tokens:
+            kw["max_tokens"] = max_tokens
+        emb = OnnxEmbedder(**kw)
         t0 = time.perf_counter()
         fresh = emb.embed([texts[i] for i in missing_idx], batch_size=batch)
         dt = time.perf_counter() - t0
@@ -274,13 +281,23 @@ async def main_async(args) -> int:
         print(f"  docstrings stripped from {changed:,} chunks")
 
     tag = "keep" if args.keep_docstrings else "strip"
+    # A variant gets its own cache files. Mixing vectors from two models in
+    # one cache would silently score a chimera.
+    variant = ""
+    if args.onnx_file:
+        variant = "_" + args.onnx_file.rsplit("/", 1)[-1].replace(".onnx", "")
+    if args.max_tokens:
+        variant += f"_t{args.max_tokens}"
     print("embedding chunks:")
     chunk_vecs = embed_cached(
-        contents, BENCH_DIR / "results" / f"eval_chunks_{tag}.npz", args.batch
+        contents, BENCH_DIR / "results" / f"eval_chunks_{tag}{variant}.npz",
+        args.batch, args.onnx_file, args.max_tokens,
     )
     print("embedding queries:")
     query_vecs = embed_cached(
-        [e.query for e in examples], BENCH_DIR / "results" / "eval_queries.npz", args.batch
+        [e.query for e in examples],
+        BENCH_DIR / "results" / f"eval_queries{variant}.npz",
+        args.batch, args.onnx_file, args.max_tokens,
     )
 
     gold = {g for e in examples for g in e.gold_chunk_ids}
@@ -367,6 +384,13 @@ def main() -> int:
                     help="retrieval_v1 (docstring) or symbol_v1 (identifier lookup)")
     ap.add_argument("--limit", type=int, default=20, help="results per query")
     ap.add_argument("--batch", type=int, default=16)
+    ap.add_argument("--max-tokens", type=int, default=None,
+                    help="encoder truncation cap. Lower caps cut peak memory "
+                         "(attention is O(n^2)) at the cost of truncating long "
+                         "chunks; both are scored end to end here.")
+    ap.add_argument("--onnx-file", default=None,
+                    help="model variant to score, e.g. onnx/model_quantized.onnx. "
+                         "Uses a separate embedding cache so variants cannot mix.")
     ap.add_argument("--max-queries", type=int, default=0)
     ap.add_argument("--max-chunks", type=int, default=0,
                     help="subset the corpus (pipeline validation only)")
