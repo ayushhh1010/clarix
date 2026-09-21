@@ -200,6 +200,30 @@ class Settings(BaseSettings):
                 f"DATABASE_URL points at localhost in production: "
                 f"{self.database_url.split('@')[-1]}"
             )
+
+        # OAuth redirect URIs are built from backend_url, and the provider
+        # sends the user wherever it says. Left at its default in
+        # production, the consent screen bounces the visitor to
+        # http://localhost:8000 -- their own machine -- or the provider
+        # rejects the request outright for not matching a registered
+        # callback. Neither says what is actually wrong.
+        #
+        # Only checked when a provider is configured: OAuth is optional,
+        # and a deployment using email and password alone has no reason to
+        # care what backend_url says.
+        oauth_configured = bool(self.github_client_id or self.google_client_id)
+        if oauth_configured:
+            for field, value in (
+                ("BACKEND_URL", self.backend_url),
+                ("FRONTEND_URL", self.frontend_url),
+            ):
+                if "localhost" in value or "127.0.0.1" in value:
+                    raise ValueError(
+                        f"{field} points at localhost in production "
+                        f"({value}) while OAuth is configured. The provider "
+                        f"would redirect users there. Set it to the public "
+                        f"URL of the service."
+                    )
         return self
 
     @property

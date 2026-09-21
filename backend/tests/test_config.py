@@ -199,3 +199,58 @@ def test_the_guard_does_not_leak_the_password():
         assert "localhost" in str(exc)
     else:
         raise AssertionError("expected the guard to reject a localhost URL")
+
+
+# --- OAuth redirect URLs ---------------------------------------------------
+#
+# The redirect URI is built as f"{backend_url}/api/auth/<provider>/callback"
+# and the provider sends the user wherever it says. Left at its localhost
+# default in production, the consent screen bounces the visitor to their own
+# machine, or the provider rejects the request for not matching a registered
+# callback. Neither error names the actual cause.
+
+GOOD_DB = "postgresql+asyncpg://u:p@ep-x.neon.tech/db"
+PUBLIC = dict(
+    backend_url="https://clarix-api.onrender.com",
+    frontend_url="https://clarix.vercel.app",
+)
+
+
+@pytest.mark.parametrize("provider", ["github_client_id", "google_client_id"])
+def test_production_refuses_localhost_backend_url_when_oauth_is_on(provider):
+    with pytest.raises(ValueError, match="BACKEND_URL"):
+        Settings(app_env="production", database_url=GOOD_DB, **{provider: "abc"})
+
+
+def test_production_refuses_localhost_frontend_url_when_oauth_is_on():
+    with pytest.raises(ValueError, match="FRONTEND_URL"):
+        Settings(
+            app_env="production",
+            database_url=GOOD_DB,
+            github_client_id="abc",
+            backend_url="https://clarix-api.onrender.com",
+            frontend_url="http://localhost:3000",
+        )
+
+
+def test_production_without_oauth_does_not_care_about_these_urls():
+    """
+    OAuth is optional. A deployment using email and password alone has no
+    reason to be blocked on a setting nothing reads.
+    """
+    s = Settings(app_env="production", database_url=GOOD_DB)
+    assert s.backend_url.startswith("http://localhost")
+
+
+def test_production_with_oauth_and_public_urls_starts():
+    s = Settings(
+        app_env="production", database_url=GOOD_DB,
+        github_client_id="abc", google_client_id="def", **PUBLIC,
+    )
+    assert s.github_client_id == "abc"
+
+
+def test_development_with_oauth_and_localhost_is_fine():
+    """Local OAuth against a localhost callback is the normal dev setup."""
+    s = Settings(app_env="development", github_client_id="abc")
+    assert "localhost" in s.backend_url
