@@ -20,6 +20,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, pool
 
 from alembic import context
+from app.db_url import normalise_database_url
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -42,57 +43,10 @@ def _sync_url() -> str:
     from app.config import get_settings
 
     url = get_settings().database_url
-    # Alembic runs synchronously; swap the async driver for a sync one.
-    for async_driver, sync_driver in (
-        ("postgresql+asyncpg", "postgresql+psycopg"),
-        ("postgres://", "postgresql+psycopg://"),
-    ):
-        if url.startswith(async_driver):
-            return _translate_ssl(url.replace(async_driver, sync_driver, 1))
-    return url
-
-
-# asyncpg spells it `ssl`, libpq (and therefore psycopg) spells it
-# `sslmode`, and the values are not quite the same vocabulary either.
-_SSL_ALIASES = {
-    "true": "require", "1": "require", "yes": "require", "on": "require",
-    "false": "disable", "0": "disable", "no": "disable", "off": "disable",
-}
-
-
-def _translate_ssl(url: str) -> str:
-    """
-    Carry the TLS setting across the driver swap.
-
-    Swapping only the driver name leaves an asyncpg `?ssl=require` in place,
-    and psycopg rejects it outright:
-
-        invalid connection option "ssl"
-
-    Every managed provider hands out a URL that needs TLS -- Neon and
-    Supabase both -- so without this `alembic upgrade head` cannot reach
-    any of them, which is exactly the step a first deployment runs.
-
-    An explicit `sslmode` already present wins; it was chosen deliberately.
-    """
-    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-
-    parts = urlsplit(url)
-    if not parts.query:
-        return url
-
-    params = parse_qsl(parts.query, keep_blank_values=True)
-    kept, ssl_value = [], None
-    for key, value in params:
-        if key == "ssl":
-            ssl_value = value
-        else:
-            kept.append((key, value))
-
-    if ssl_value is not None and not any(k == "sslmode" for k, _ in kept):
-        kept.append(("sslmode", _SSL_ALIASES.get(ssl_value.lower(), ssl_value)))
-
-    return urlunsplit(parts._replace(query=urlencode(kept)))
+    # Alembic runs synchronously and cannot use asyncpg. The same helper
+    # the application uses handles the driver swap and the TLS parameter,
+    # so the two cannot disagree about what a provider URL means.
+    return normalise_database_url(url, driver="psycopg")
 
 
 def run_migrations_offline() -> None:
