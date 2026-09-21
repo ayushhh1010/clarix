@@ -19,7 +19,7 @@ import re
 
 import pytest
 
-from app.config import Settings
+from app.config import LOCAL_DEV_DATABASE_URL, Settings
 
 BACKEND_DIR = pathlib.Path(__file__).resolve().parents[1]
 ENV_EXAMPLE = BACKEND_DIR / ".env.example"
@@ -142,3 +142,60 @@ def test_indexer_embed_batch_defaults_to_one():
     linearly (0.25 s at batch 1 against 4.84 s at batch 16).
     """
     assert Settings.model_fields["indexer_embed_batch"].default == 1
+
+
+# --- the production guard --------------------------------------------------
+#
+# A deploy with DATABASE_URL unset fell back to the docker-compose default
+# and spent its startup dialling 127.0.0.1:5433 inside a container. The
+# error said "Connection refused", which describes the symptom and hides
+# the cause: the variable was simply never set.
+
+
+def test_production_refuses_the_local_dev_database():
+    with pytest.raises(ValueError, match="DATABASE_URL is not set"):
+        Settings(app_env="production", database_url=LOCAL_DEV_DATABASE_URL)
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1"])
+def test_production_refuses_any_localhost_database(host):
+    """
+    Not just the exact default: any localhost URL in production is a
+    misconfiguration, since nothing is listening inside the container.
+    """
+    with pytest.raises(ValueError, match="localhost"):
+        Settings(
+            app_env="production",
+            database_url=f"postgresql+asyncpg://u:p@{host}:5432/db",
+        )
+
+
+def test_development_still_accepts_the_local_default():
+    """The guard must not make local development harder."""
+    s = Settings(app_env="development", database_url=LOCAL_DEV_DATABASE_URL)
+    assert s.database_url == LOCAL_DEV_DATABASE_URL
+
+
+def test_production_accepts_a_managed_database():
+    s = Settings(
+        app_env="production",
+        database_url="postgresql+asyncpg://u:p@ep-x.neon.tech/db?ssl=require",
+    )
+    assert "neon.tech" in s.database_url
+
+
+def test_the_guard_does_not_leak_the_password():
+    """
+    The message names the host so the operator can see what is wrong,
+    and must not echo the credentials back into a deploy log.
+    """
+    try:
+        Settings(
+            app_env="production",
+            database_url="postgresql+asyncpg://user:sup3rs3cret@localhost:5432/db",
+        )
+    except ValueError as exc:
+        assert "sup3rs3cret" not in str(exc)
+        assert "localhost" in str(exc)
+    else:
+        raise AssertionError("expected the guard to reject a localhost URL")

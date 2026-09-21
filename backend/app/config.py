@@ -6,7 +6,14 @@ Loads from environment variables and .env file.
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The docker-compose database from the README. Declared up here so the
+# production guard can recognise it.
+LOCAL_DEV_DATABASE_URL = (
+    "postgresql+asyncpg://clarix:clarix_secret@localhost:5433/clarix_db"
+)
 
 
 class Settings(BaseSettings):
@@ -119,7 +126,9 @@ class Settings(BaseSettings):
     google_api_key: str = ""
 
     # ── PostgreSQL ──────────────────────────────────────────
-    database_url: str = "postgresql+asyncpg://clarix:clarix_secret@localhost:5433/clarix_db"
+    # The local docker-compose database. Convenient in development and
+    # never right in production -- see the validator below.
+    database_url: str = LOCAL_DEV_DATABASE_URL
 
     # ── Repos ───────────────────────────────────────────────
     repos_dir: str = "./data/repos"
@@ -157,6 +166,41 @@ class Settings(BaseSettings):
     # over-budget request fails rather than costing more.
     rag_top_k: int = 20
     context_budget_tokens: int = 4000
+
+    @model_validator(mode="after")
+    def _refuse_dev_defaults_in_production(self):
+        """
+        Fail loudly rather than quietly reaching for localhost.
+
+        With DATABASE_URL unset, a production deploy fell back to the
+        docker-compose default and spent its startup trying to open a
+        connection to 127.0.0.1:5433 inside a container where nothing is
+        listening. The error it produced -- "Connection refused" against
+        localhost -- describes the symptom and hides the cause, which is
+        simply that the variable was never set.
+
+        The same reasoning already applies to SECRET_KEY
+        (security._check_secret); this closes the matching hole for the
+        database, and for the embedding endpoint, where the failure is
+        worse because it is silent: an unset endpoint disables dense
+        retrieval and the service still answers, just less well.
+        """
+        if self.app_env != "production":
+            return self
+
+        if self.database_url == LOCAL_DEV_DATABASE_URL:
+            raise ValueError(
+                "DATABASE_URL is not set: the application would fall back "
+                "to the local docker-compose database at localhost:5433, "
+                "which does not exist in production. Set DATABASE_URL to "
+                "your managed Postgres connection string."
+            )
+        if "localhost" in self.database_url or "127.0.0.1" in self.database_url:
+            raise ValueError(
+                f"DATABASE_URL points at localhost in production: "
+                f"{self.database_url.split('@')[-1]}"
+            )
+        return self
 
     @property
     def repos_path(self) -> Path:
