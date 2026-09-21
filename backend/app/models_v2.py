@@ -56,7 +56,10 @@ EMBED_MODEL_ID = "jinaai/jina-embeddings-v2-base-code"
 # Bumped whenever chunking, the embedding model, or the vector layout
 # changes. A repo whose `index_version` is behind is reindexed rather than
 # queried, so a model swap can never silently mix vector spaces.
-INDEX_VERSION = 1
+# 2: the embedding variant changed from fp16 to int8 at a 512-token cap
+# so the indexer fits a 512 MiB instance. Different vectors, so every
+# index built under version 1 is stale and gets rebuilt.
+INDEX_VERSION = 2
 
 
 def _utcnow() -> datetime:

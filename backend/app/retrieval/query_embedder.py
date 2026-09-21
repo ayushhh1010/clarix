@@ -24,6 +24,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from app.embedding_id import embedding_identity
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 8.0
@@ -168,10 +170,16 @@ def build_query_embedder(settings) -> QueryEmbedder:
             "and symbol arms only"
         )
         return QueryEmbedder()
+    # The expected identity is composed the same way the indexer composes
+    # it, so a disagreement about the ONNX variant or the truncation cap is
+    # caught here rather than showing up as quietly worse rankings.
     return HttpQueryEmbedder(
         endpoint=endpoint,
-        expected_model=getattr(
-            settings, "embedding_model_id", "jinaai/jina-embeddings-v2-base-code"
+        expected_model=embedding_identity(
+            getattr(settings, "embedding_model_id",
+                    "jinaai/jina-embeddings-v2-base-code"),
+            getattr(settings, "embedding_onnx_file", "onnx/model_quantized.onnx"),
+            getattr(settings, "embedding_max_tokens", 512),
         ),
         api_key=getattr(settings, "embedding_api_key", ""),
     )

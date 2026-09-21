@@ -68,6 +68,8 @@ from pydantic import BaseModel, Field
 from app.config import get_settings
 from app.indexing.embedder import (
     EMBED_DIM,
+    MAX_SEQUENCE_TOKENS,
+    ONNX_FILE,
     OnnxEmbedder,
     binary_quantize,
     bits_to_sql,
@@ -111,6 +113,7 @@ class SharedEmbedder:
         self._lock = lock or threading.Lock()
         self._batch_size = max(1, batch_size)
         self.model_id = inner.model_id
+        self.identity = inner.identity
         self.stats = inner.stats
 
     def embed(
@@ -216,7 +219,12 @@ def build_app(settings=None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         logger.info("indexer starting: loading %s", settings.embedding_model_id)
-        inner = OnnxEmbedder(model_id=settings.embedding_model_id)
+        inner = OnnxEmbedder(
+            model_id=settings.embedding_model_id,
+            onnx_file=getattr(settings, "embedding_onnx_file", ONNX_FILE),
+            max_tokens=getattr(settings, "embedding_max_tokens", MAX_SEQUENCE_TOKENS),
+            threads=getattr(settings, "embedding_threads", 0) or None,
+        )
         shared = SharedEmbedder(
             inner, batch_size=getattr(settings, "indexer_embed_batch", 1)
         )
@@ -285,7 +293,9 @@ def build_app(settings=None) -> FastAPI:
         )
         packed = binary_quantize(matrix)
         return EmbedResponse(
-            model_id=embedder.model_id,
+            # The composite identity, not the repository id: the client
+            # must be able to tell fp16 vectors from int8 ones.
+            model_id=embedder.identity,
             dim=EMBED_DIM,
             vectors=[vector_to_sql(row) for row in matrix],
             bits=[bits_to_sql(packed[i], EMBED_DIM) for i in range(len(matrix))],
@@ -298,7 +308,7 @@ def build_app(settings=None) -> FastAPI:
         return {
             "status": "healthy" if embedder is not None else "starting",
             "service": "clarix-indexer",
-            "model_id": getattr(embedder, "model_id", None),
+            "model_id": getattr(embedder, "identity", None),
             "dim": EMBED_DIM,
             "worker_running": bool(worker is not None and worker.is_alive()),
         }

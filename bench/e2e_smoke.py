@@ -128,8 +128,25 @@ async def run(sync_url: str, workdir: pathlib.Path) -> int:
 
     print("loading model...")
     t0 = time.perf_counter()
-    embedder = SharedEmbedder(OnnxEmbedder(), batch_size=1)
-    print(f"model ready in {time.perf_counter() - t0:.1f}s")
+    # Built from Settings, not from the module defaults. `OnnxEmbedder()`
+    # with no arguments is the benchmark reference (fp16 at 2048), which is
+    # NOT what deploys -- testing that would exercise a configuration
+    # nobody runs.
+    from app.config import get_settings
+
+    cfg = get_settings()
+    embedder = SharedEmbedder(
+        OnnxEmbedder(
+            model_id=cfg.embedding_model_id,
+            onnx_file=cfg.embedding_onnx_file,
+            max_tokens=cfg.embedding_max_tokens,
+            threads=cfg.embedding_threads or None,
+        ),
+        batch_size=1,
+    )
+    print(f"model ready in {time.perf_counter() - t0:.1f}s "
+          f"({cfg.embedding_onnx_file}, cap {cfg.embedding_max_tokens})")
+    print(f"identity: {embedder._inner.identity}")
 
     config = WorkerConfig(
         workdir=workdir,

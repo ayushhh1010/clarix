@@ -107,6 +107,34 @@ def test_deployment_critical_settings_are_documented(name):
     assert name in _example_keys()
 
 
+def test_the_deployable_embedding_config_is_the_default():
+    """
+    The defaults are what a fresh deploy runs, so they must be the
+    configuration that actually fits the target instance.
+
+    fp16 was the default until Render killed the service with
+    "Out of memory (used over 512Mi)". Measured on Linux with the worker
+    running and a cold download, fp16 peaks at 1,135 MB and cannot fit at
+    any truncation cap; int8 at a 384-token cap peaks at 432 MB against
+    the 537 MB limit. See bench/bench_service_memory.py.
+    """
+    fields = Settings.model_fields
+    assert fields["embedding_onnx_file"].default == "onnx/model_quantized.onnx"
+    assert fields["embedding_max_tokens"].default == 384
+
+
+def test_index_version_is_ahead_of_the_fp16_index():
+    """
+    The embedding variant changed, so the vectors changed. Anything
+    indexed at version 1 holds fp16 vectors and must be rebuilt rather
+    than queried with int8 ones.
+    """
+    from app.models_v2 import INDEX_VERSION
+
+    assert Settings.model_fields["index_version"].default >= 2
+    assert INDEX_VERSION >= 2
+
+
 def test_indexer_embed_batch_defaults_to_one():
     """
     Measured, not preferred: throughput is flat across batch sizes with the

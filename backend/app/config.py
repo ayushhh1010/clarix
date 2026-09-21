@@ -51,6 +51,47 @@ class Settings(BaseSettings):
     embedding_api_key: str = ""
     embedding_model_id: str = "jinaai/jina-embeddings-v2-base-code"
 
+    # Which ONNX export, and the encoder truncation cap. Both change the
+    # vectors, so both are part of the identity the API and the indexer
+    # must agree on -- see embedder.embedding_identity.
+    #
+    # int8 at a 384-token cap is what fits a 512 MiB instance with room to
+    # spare. Measured on Linux with the worker running and a cold model
+    # download, peak RSS against the 537 MB cap
+    # (bench/bench_service_memory.py):
+    #
+    #     fp16 @ 512    1,135 MB   does not fit -- not at any cap
+    #     int8 @ 1024     619 MB   does not fit
+    #     int8 @ 512      469 MB   fits, 68 MB spare (503 MB on a rerun)
+    #     int8 @ 384      432 MB   fits, 105 MB spare
+    #
+    # fp16 cannot be made to fit: it needs ~1 GB merely to load, because
+    # CPUs have no fp16 kernels and ONNX Runtime upcasts every weight to
+    # fp32. The rest of the peak is attention, which is O(sequence^2),
+    # which is why the truncation cap is the second lever.
+    #
+    # 384 over 512 because the same measurement varies by ~30 MB between
+    # runs, and 512 leaves too little margin for that, while costing the
+    # same in quality: semantic ROUTED MRR is 0.696 at 384 against 0.693
+    # at 512 -- indistinguishable.
+    #
+    # The quality cost is measured end to end, not inferred from the
+    # "90.5% agreement with fp32" proxy, which badly overstated it:
+    # semantic ROUTED MRR 0.707 -> 0.696, and identifier queries are
+    # unchanged. Raise both on a host with more memory, and bump
+    # index_version when you do -- the stored vectors must be rebuilt.
+    embedding_onnx_file: str = "onnx/model_quantized.onnx"
+    embedding_max_tokens: int = 384
+
+    # ONNX Runtime intra-op threads. 0 inherits the core count.
+    #
+    # Pinned to 1, but NOT for memory: measured, it makes no difference
+    # (469 MB peak at 1 thread against 464 MB at the default, which is
+    # inside the ~30 MB run-to-run variance). It is pinned because a free
+    # instance reports far more cores than it is actually scheduled, and
+    # oversubscribing them costs latency rather than buying throughput.
+    embedding_threads: int = 1
+
     # ── Indexer process (python -m app.indexing) ─────────────
     #
     # Serves the endpoint above and runs the indexing worker. Separate from
@@ -101,7 +142,7 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
 
     # ── Indexing ─────────────────────────────────────────────
-    index_version: int = 1
+    index_version: int = 2
     index_batch_size: int = 64
     worker_dir: str = "./data/work"
 
