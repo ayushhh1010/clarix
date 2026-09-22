@@ -708,6 +708,64 @@ That makes the truncation cap the second lever, and the only other one.
 run and 469 MB on another -- about 30 MB of run-to-run variance, which
 eats most of a 68 MB margin.
 
+### Then it was killed again, and the cause was a setting I had chosen
+
+The service above still died mid-index on a 1,385-chunk repository. A
+third benchmark, `bench_index_memory.py`, runs the thing itself -- real
+PostgreSQL, real clone, real worker, indexing end to end -- with a
+sampler reading `VmRSS` every 100 ms.
+
+The trajectory is the finding. Resident memory sat at **405-417 MB for
+the whole run** and spiked once, briefly, to ~530 MB. Not a leak, and
+nothing that scales with repository size: the steady state fits the
+instance comfortably, and one transient event did not.
+
+Per-file profiling (`bench/profile_index_spike.py`) placed it. Reading
+files cost nothing and chunking cost nothing -- the jumps were entirely
+in `embed`, and did not track file size: a 4 KB file producing 3 chunks
+moved RSS by 182 MB.
+
+That is allocation churn, and it was self-inflicted. **The memory arena
+had been turned off.**
+
+| configuration | peak RSS | time | outcome |
+|---|---:|---:|---|
+| arena **off** | 574 MB | 343 s | killed by the platform |
+| **arena ON** | **430 MB** | **301 s** | fits, 107 MB spare |
+
+The arena allocates a pool once and reuses it. Without it, each of 1,385
+inferences allocates and frees, and the high-water mark of that churn
+sits ~200 MB above the model. Turning it on is both smaller and 14%
+faster.
+
+**The mistake was generalising a measurement across a variable I had
+changed.** The arena was measured on fp16 and looked catastrophic at
+1,809 MB -- but that number is about the *model*: CPUs have no fp16
+kernels, ONNX Runtime upcasts every weight to fp32, and fp16 alone needs
+about a gigabyte. Switching to int8 made the arena cheap, and I never
+re-measured it, because I had already "established" that the arena was
+the problem.
+
+Two other candidates were tested and rejected before the right one, each
+against the same real indexing run rather than by argument:
+
+| change | peak RSS | verdict |
+|---|---:|---|
+| `MALLOC_ARENA_MAX=2` | 565 MB | within noise |
+| `INDEX_BATCH_SIZE` 64 -> 8 | 596 MB | worse |
+| `enable_mem_pattern=False` | 573 MB | no effect |
+
+The last of those is worth keeping despite changing nothing. ONNX
+Runtime's C API says the optimisation works "if the input shapes are the
+same", and with one chunk per inference the shapes never repeat -- so it
+is the documented setting for this workload even though it is not what
+was wrong.
+
+With the arena on, the truncation cap was re-tested rather than assumed:
+1,024 tokens peaks at 747 MB and still does not fit, so 384 stands. That
+costs nothing measurable anyway -- semantic ROUTED MRR is 0.696 at 384
+against 0.693 at 512.
+
 ### What int8 actually costs, measured rather than inferred
 
 The obvious objection to int8 is section 6, which records **90.5%

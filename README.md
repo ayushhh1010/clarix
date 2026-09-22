@@ -49,14 +49,21 @@ and holds no model: 59 MB of import RSS. The indexer holds the ONNX weights
 and peaks at 432 MB, measured on Linux with the worker running and a cold
 model download (`bench/bench_service_memory.py`).
 
-The indexer runs int8 weights at a 384-token cap, and that is not a detail —
-fp16 needs about a gigabyte just to load, because CPUs have no fp16 kernels
-and ONNX Runtime upcasts every weight to fp32. An earlier version shipped
-fp16 on the strength of a measurement taken on Windows against a cached
-model with the worker off; the container was killed for exceeding its
-memory limit. The quality cost of int8 was then measured end to end rather
-than inferred: identifier queries are unchanged, semantic MRR moves 0.707 →
-0.696. Both the mistake and the correction are in BENCHMARKS.md section 8.
+The indexer runs int8 weights at a 384-token cap with ONNX Runtime's memory
+arena enabled. None of those three is arbitrary, and getting the last one
+wrong cost two production out-of-memory kills.
+
+fp16 needs about a gigabyte merely to load, because CPUs have no fp16
+kernels and ONNX Runtime upcasts every weight to fp32. The arena, turned
+*off*, is what caused the second kill: without it each of ~1,385 inferences
+allocates and frees, and that churn peaks ~200 MB above the model. With it
+on the same run peaks at 430 MB instead of 574 MB, and finishes faster.
+
+The quality cost of int8 was measured end to end rather than inferred from
+the "90.5% agreement with fp32" proxy that overstates it: identifier
+queries are unchanged, semantic MRR moves 0.707 → 0.696. Both the mistakes
+and the corrections are in [BENCHMARKS.md](BENCHMARKS.md) section 8 —
+including why measuring a loaded-but-idle process found neither of them.
 
 The indexer serves query embeddings *and* runs the indexing worker, because
 the worker already holds the model, so answering queries from it is free.
@@ -219,7 +226,7 @@ needs.
 cd backend && pytest -q
 ```
 
-**460 tests, no Docker required.** PostgreSQL 18.6 with pgvector 0.8.6 comes
+**461 tests, no Docker required.** PostgreSQL 18.6 with pgvector 0.8.6 comes
 from the `embedded-postgres` wheel, so schema and retrieval tests run real
 SQL against a real server anywhere `pip install` works — a suite that needs
 a daemon is a suite that gets skipped.

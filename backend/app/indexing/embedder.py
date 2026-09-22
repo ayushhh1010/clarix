@@ -98,24 +98,55 @@ class OnnxEmbedder:
         max_tokens: int = MAX_SEQUENCE_TOKENS,
         threads: int | None = None,
         enable_mem_arena: bool = False,
+        enable_mem_pattern: bool = False,
     ):
         """
-        `enable_mem_arena` is the difference between deployable and not.
+        `enable_mem_arena` should be ON in production, and the module
+        default of False exists only so benchmarks can isolate it.
 
-        ONNX Runtime's CPU arena pre-allocates and never returns memory, and
-        on this model it dominates the process. Measured, fp16, 200 real
-        chunks at batch 16 (bench/bench_colocated_rss.py):
+        CORRECTION, and an instructive one. This docstring previously said
+        the arena "dominates the process" and had to be off to deploy, on
+        the strength of an fp16 measurement showing 1,809 MB against
+        439 MB. That reading was about the *model*, not the arena: CPUs
+        have no fp16 kernels, so ONNX Runtime upcasts every weight to fp32
+        and fp16 alone needs ~1 GB. The conclusion was then carried across
+        to int8 without re-measuring.
 
-            arena on    peak RSS 1,809 MB    3.40 chunks/s    55 ms/query
-            arena off   peak RSS   439 MB    2.33 chunks/s    99 ms/query
+        Measured properly, on a real indexing run of 1,385 chunks with the
+        shipped int8 model (bench/bench_index_memory.py), peak RSS against
+        a 537 MB cap:
 
-        There is no middle setting: `arena_extend_strategy` changed nothing
-        and disabling `mem_pattern` only reached 835 MB. So it is 439 MB or
-        it does not fit a 512 MB instance, which makes the 1.46x throughput
-        the price of deploying at all.
+            arena off    574 MB    343 s    killed by the platform
+            arena ON     430 MB    301 s    fits, 107 MB spare, and faster
 
-        It defaults to off for that reason. Benchmarks that want to measure
-        the arena pass True explicitly.
+        Turning the arena off is what *caused* the out-of-memory kill. The
+        arena allocates a pool once and reuses it; without it each of
+        those inferences allocates and frees, and the high-water mark of
+        that churn sits ~200 MB above the model. Nothing about that is
+        visible in a process that has loaded the model and is sitting
+        idle, which is why two earlier benchmarks missed it entirely.
+
+        `enable_mem_pattern` is off for a different and more specific
+        reason. ONNX Runtime's C API describes it as:
+
+            "The idea is if the input shapes are the same, we could trace
+             the internal memory allocation and generate a memory pattern
+             for future request."
+
+        Every inference here has a *different* shape. Chunks vary in
+        length and `INDEXER_EMBED_BATCH` is 1, so each call presents a
+        sequence the session has never seen. A pattern traced for one
+        shape is never reused, and the runtime keeps tracing new ones --
+        which is why resident memory climbed with the number of chunks
+        indexed rather than settling. ONNX Runtime's own guidance is to
+        disable it for "dynamic shapes like variable sequence length".
+
+        It is off because ONNX Runtime's own guidance says to disable it
+        for variable sequence lengths, and because measurement showed it
+        buying nothing here: 573 MB with it off against 574 MB with it on,
+        on the same indexing run. It is not what fixed the memory problem
+        -- the arena was -- but it is still the documented setting for
+        this shape of workload.
         """
         import onnxruntime as ort
         from huggingface_hub import hf_hub_download
@@ -132,6 +163,7 @@ class OnnxEmbedder:
         opts = ort.SessionOptions()
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         opts.enable_cpu_mem_arena = enable_mem_arena
+        opts.enable_mem_pattern = enable_mem_pattern
         if threads:
             opts.intra_op_num_threads = threads
         self._session = ort.InferenceSession(

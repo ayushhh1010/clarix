@@ -123,6 +123,22 @@ def test_the_deployable_embedding_config_is_the_default():
     assert fields["embedding_max_tokens"].default == 384
 
 
+def test_the_memory_arena_is_on():
+    """
+    Off is what caused the out-of-memory kill, not what prevented one.
+
+    Measured on a real 1,385-chunk indexing run against a 537 MB cap:
+    574 MB with the arena off (killed) against 430 MB with it on. The
+    arena allocates a pool once and reuses it; without it each inference
+    allocates and frees, and that churn peaks ~200 MB above the model.
+
+    Pinned by a test because the setting was previously wrong for a long
+    time on the strength of an fp16 measurement that did not apply to the
+    int8 model actually shipped.
+    """
+    assert Settings.model_fields["embedding_mem_arena"].default is True
+
+
 def test_index_version_is_ahead_of_the_fp16_index():
     """
     The embedding variant changed, so the vectors changed. Anything

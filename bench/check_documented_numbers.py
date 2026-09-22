@@ -45,6 +45,11 @@ def colocated(label: str, field: str) -> float:
     raise KeyError(label)
 
 
+def indexing(artifact: str, field: str) -> float:
+    """A figure from a real indexing run, not a loaded-but-idle process."""
+    return load(artifact)[field]
+
+
 def linux_mem(onnx: str, cap: int, field: str) -> float:
     for row in load("memory_linux.json")["results"]:
         if row["onnx_file"].endswith(onnx) and row["max_tokens"] == cap and row["worker"]:
@@ -145,9 +150,14 @@ CHECKS: list[tuple[str, str, float, float]] = [
      colocated("fp16, arena off + API", "api_only_mb"), 0.05),
     ("backend/app/indexing/service.py", "app.main (API) alone                 59.1 MB",
      colocated("fp16, arena off + API", "api_only_mb"), 0.05),
+    # The corrected arena claim, in the docstring that previously carried
+    # the wrong one.
     ("backend/app/indexing/embedder.py",
-     "arena off   peak RSS   439 MB    2.33 chunks/s    99 ms/query",
-     colocated("fp16, arena off", "chunks_per_sec"), 0.005),
+     "arena ON     430 MB    301 s    fits, 107 MB spare, and faster",
+     indexing("index_memory_arena_on.json", "peak_rss_mb"), 1.0),
+    ("backend/app/indexing/embedder.py",
+     "arena off    574 MB    343 s    killed by the platform",
+     indexing("index_memory.json", "peak_rss_mb"), 1.0),
 
     # --- batch size: the reason INDEXER_EMBED_BATCH is 1 ------------------
     ("BENCHMARKS.md", "| **1** | **2.43** | **0.25 s** | **1.15 s** | 2.18 s |",
@@ -167,6 +177,20 @@ CHECKS: list[tuple[str, str, float, float]] = [
      linux_mem("model_quantized.onnx", 512, "peak_mb"), 1.0),
     ("BENCHMARKS.md", "| **int8** | **384** | **432 MB** | **105 MB** | **yes** |",
      linux_mem("model_quantized.onnx", 384, "peak_mb"), 1.0),
+
+    # --- the arena, which was the actual fix ------------------------------
+    ("BENCHMARKS.md", "| arena **off** | 574 MB | 343 s | killed by the platform |",
+     indexing("index_memory.json", "peak_rss_mb"), 1.0),
+    ("BENCHMARKS.md", "| **arena ON** | **430 MB** | **301 s** | fits, 107 MB spare |",
+     indexing("index_memory_arena_on.json", "peak_rss_mb"), 1.0),
+    ("BENCHMARKS.md", "| `MALLOC_ARENA_MAX=2` | 565 MB | within noise |",
+     indexing("index_memory_arena2.json", "peak_rss_mb"), 1.0),
+    ("BENCHMARKS.md", "| `INDEX_BATCH_SIZE` 64 -> 8 | 596 MB | worse |",
+     indexing("index_memory_b8.json", "peak_rss_mb"), 1.0),
+    ("BENCHMARKS.md", "| `enable_mem_pattern=False` | 573 MB | no effect |",
+     indexing("index_memory_nopattern.json", "peak_rss_mb"), 1.0),
+    ("BENCHMARKS.md", "1,024 tokens peaks at 747 MB and still does not fit",
+     indexing("index_memory_arena_on_t1024.json", "peak_rss_mb"), 1.0),
 
     # --- what the shipped embedding config costs --------------------------
     ("BENCHMARKS.md", "| semantic | ROUTED | mrr | 0.707 | 0.696 | -0.010 |",

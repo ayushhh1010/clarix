@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/ayushhh1010/nanoserve",
+  "batch": 64,
+  "chunks": 1365,
+  "repo_status": "ready",
+  "job_status": "done",
+  "job_error": null,
+  "seconds": 436.5,
+  "after_model_mb": 371.6,
+  "peak_rss_mb": 574.3,
+  "peak_during": "indexing"
+}
