@@ -226,7 +226,7 @@ needs.
 cd backend && pytest -q
 ```
 
-**461 tests, no Docker required.** PostgreSQL 18.6 with pgvector 0.8.6 comes
+**463 tests, no Docker required.** PostgreSQL 18.6 with pgvector 0.8.6 comes
 from the `embedded-postgres` wheel, so schema and retrieval tests run real
 SQL against a real server anywhere `pip install` works — a suite that needs
 a daemon is a suite that gets skipped.

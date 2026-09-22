@@ -58,6 +58,7 @@ import asyncio
 import hmac
 import logging
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -231,7 +232,7 @@ def build_app(settings=None) -> FastAPI:
         )
         state["embedder"] = shared
 
-        worker = _start_worker_thread(settings, shared)
+        worker = _start_worker_thread(settings, shared, state)
         state["worker"] = worker
         logger.info(
             "indexer ready: model=%s, worker=%s",
@@ -304,14 +305,46 @@ def build_app(settings=None) -> FastAPI:
 
     @app.api_route("/health", methods=["GET", "HEAD"])
     async def health():
+        """
+        Liveness, plus what the worker last observed.
+
+        `worker_running` alone is misleading, and it cost a long
+        diagnosis: the thread was alive and this endpoint said healthy
+        while the worker polled a queue it could not reach, so jobs sat
+        at `pending` with nothing anywhere saying why. A thread that is
+        running and a worker that is working are different claims.
+
+        `worker_error` carries the last exception the loop caught, and
+        `worker_last_poll_seconds_ago` shows whether it is still turning
+        -- together they distinguish "cannot reach the database", "stuck
+        on a job", and "idle with nothing to do", which all looked
+        identical before.
+
+        These are recorded by the worker and read from memory. Health
+        deliberately does not touch the database: the platform probes it
+        every few seconds, so a slow probe turns a database hiccup into a
+        restart loop.
+        """
         worker = state.get("worker")
         embedder = state.get("embedder")
+
+        poll = state.get("poll", {})
+        last = poll.get("at")
         return {
             "status": "healthy" if embedder is not None else "starting",
             "service": "clarix-indexer",
             "model_id": getattr(embedder, "identity", None),
             "dim": EMBED_DIM,
             "worker_running": bool(worker is not None and worker.is_alive()),
+            # What the worker last saw, recorded by the loop itself. No
+            # database call happens here: the platform probes this every
+            # few seconds and a slow probe becomes a restart loop.
+            "worker_polls": poll.get("count", 0),
+            "worker_jobs_done": poll.get("jobs", 0),
+            "worker_last_poll_seconds_ago": (
+                None if last is None else round(time.time() - last, 1)
+            ),
+            "worker_error": poll.get("error"),
         }
 
     return app
@@ -350,7 +383,7 @@ class WorkerThread:
             logger.warning("worker thread did not stop within %.0fs", timeout)
 
 
-def _start_worker_thread(settings, embedder) -> WorkerThread | None:
+def _start_worker_thread(settings, embedder, state_ref: dict) -> WorkerThread | None:
     """
     Run the indexing worker on its own thread and event loop.
 
@@ -376,6 +409,17 @@ def _start_worker_thread(settings, embedder) -> WorkerThread | None:
     holder: dict = {}
     ready = threading.Event()
 
+    poll_state = state_ref
+    poll_state.setdefault("poll", {"count": 0, "jobs": 0, "at": None, "error": None})
+
+    def record_poll(did_work: bool, error: str | None) -> None:
+        p = poll_state["poll"]
+        p["count"] += 1
+        p["at"] = time.time()
+        p["error"] = error
+        if did_work:
+            p["jobs"] += 1
+
     def target() -> None:
         from app.database import async_session_factory
 
@@ -385,7 +429,7 @@ def _start_worker_thread(settings, embedder) -> WorkerThread | None:
             ready.set()
             await run_worker(
                 async_session_factory, config, embedder, chunker,
-                stop=holder["stop"],
+                stop=holder["stop"], on_poll=record_poll,
             )
 
         try:
