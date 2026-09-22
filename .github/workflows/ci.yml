@@ -99,8 +99,8 @@ jobs:
           set -euo pipefail
           count=$(pytest --collect-only -q 2>/dev/null | tail -1 | grep -oE '^[0-9]+' || echo 0)
           echo "collected $count tests"
-          if [ "$count" -lt 458 ]; then
-            echo "::error::only $count tests collected; expected at least 458"
+          if [ "$count" -lt 460 ]; then
+            echo "::error::only $count tests collected; expected at least 460"
             exit 1
           fi
 

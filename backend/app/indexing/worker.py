@@ -246,6 +246,7 @@ async def run_worker(
     *,
     stop: asyncio.Event | None = None,
     max_jobs: int | None = None,
+    on_poll: Callable[[bool, str | None], None] | None = None,
 ) -> int:
     """
     Poll until stopped. Returns the number of jobs processed.
@@ -269,11 +270,25 @@ async def run_worker(
                 except Exception:  # noqa: BLE001 - reaping is best-effort
                     logger.exception("reaper failed")
 
+            poll_error: str | None = None
             try:
                 did_work = await run_once(db, config, embedder, chunker)
-            except Exception:  # noqa: BLE001 - never exit the loop on error
+            except Exception as exc:  # noqa: BLE001 - never exit the loop on error
                 logger.exception("worker iteration failed")
                 did_work = False
+                poll_error = f"{type(exc).__name__}: {exc}"[:200]
+
+            # Report what this poll actually saw. A thread that is alive
+            # and a worker that can reach its queue are different claims,
+            # and only the second one is worth putting in a health check.
+            # Health must not query the database itself: the platform
+            # probes it every few seconds, and a slow probe becomes a
+            # restart loop.
+            if on_poll is not None:
+                try:
+                    on_poll(did_work, poll_error)
+                except Exception:  # noqa: BLE001 - reporting must never break the loop
+                    logger.exception("on_poll callback raised")
 
         if did_work:
             processed += 1

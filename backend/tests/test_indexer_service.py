@@ -392,6 +392,66 @@ def test_production_without_a_key_refuses_to_start(fake):
 
 # --- health ----------------------------------------------------------------
 
+async def test_health_reports_what_the_worker_last_saw(fake, monkeypatch):
+    """
+    The fields that would have made a real outage self-diagnosing.
+
+    `worker_running: true` was reported while the worker polled a queue
+    it could not reach, so jobs sat at `pending` with every probe green.
+    "The thread is alive" and "the worker can see its work" are different
+    claims and health has to make the second one.
+    """
+    polls = []
+
+    async def fake_run_worker(_f, _c, _e, _ch, *, stop=None, max_jobs=None,
+                              on_poll=None):
+        # Two polls: one clean, one that failed the way an unreachable
+        # database fails.
+        on_poll(False, None)
+        on_poll(False, "OperationalError: connection refused")
+        polls.append(True)
+        await stop.wait()
+        return 0
+
+    monkeypatch.setattr("app.indexing.worker.run_worker", fake_run_worker)
+    monkeypatch.setattr("app.indexing.chunker.ASTChunker", lambda **_k: object())
+
+    class WithWorker(Settings):
+        indexer_run_worker = True
+
+    app = build_app(WithWorker())
+    async with app.router.lifespan_context(app):
+        for _ in range(100):
+            if polls:
+                break
+            await asyncio.sleep(0.05)
+        async with await _client(app) as http:
+            body = (await http.get("/health")).json()
+
+    assert body["worker_polls"] == 2
+    assert body["worker_error"] == "OperationalError: connection refused", (
+        "the reason the worker cannot work must reach health"
+    )
+    assert body["worker_last_poll_seconds_ago"] is not None
+
+
+async def test_health_does_not_touch_the_database(fake):
+    """
+    Health is probed every few seconds by the platform. Querying the
+    database from it turns a database hiccup into a restart loop, so the
+    counters are read from memory and the handler stays instant.
+    """
+    app = build_app(Settings())          # worker disabled, no database
+    async with await _client(app) as http, app.router.lifespan_context(app):
+        t0 = time.perf_counter()
+        body = (await http.get("/health")).json()
+        elapsed = time.perf_counter() - t0
+
+    assert body["status"] == "healthy"
+    assert body["worker_polls"] == 0
+    assert elapsed < 0.1, f"/health took {elapsed:.2f}s; it must not do I/O"
+
+
 async def test_health_reports_model_and_worker(fake):
     app = build_app(Settings())
     async with await _client(app) as http, app.router.lifespan_context(app):
@@ -549,7 +609,7 @@ async def test_worker_thread_starts_and_stops(fake, monkeypatch):
     stopped = threading.Event()
 
     async def fake_run_worker(_factory, _config, _embedder, _chunker, *, stop=None,
-                              max_jobs=None):
+                              max_jobs=None, on_poll=None):
         started.set()
         await stop.wait()
         stopped.set()

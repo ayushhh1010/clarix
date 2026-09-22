@@ -36,3 +36,8 @@ bench/corpus/
 
 # Benchmark caches (regenerable; embeddings_cache.npz alone is ~10 MB)
 bench/results/*.npz
+
+# Stray clones from benchmark runs (bench/profile_index_spike.py clones
+# into a temp dir, but a stale one landed here once and was committed).
+nanoserve-fresh/
+*-fresh/
