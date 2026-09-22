@@ -224,6 +224,7 @@ def build_app(settings=None) -> FastAPI:
             onnx_file=getattr(settings, "embedding_onnx_file", ONNX_FILE),
             max_tokens=getattr(settings, "embedding_max_tokens", MAX_SEQUENCE_TOKENS),
             threads=getattr(settings, "embedding_threads", 0) or None,
+            enable_mem_arena=getattr(settings, "embedding_mem_arena", False),
         )
         shared = SharedEmbedder(
             inner, batch_size=getattr(settings, "indexer_embed_batch", 1)

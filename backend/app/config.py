@@ -99,6 +99,27 @@ class Settings(BaseSettings):
     # oversubscribing them costs latency rather than buying throughput.
     embedding_threads: int = 1
 
+    # ONNX Runtime's CPU memory arena. ON, and this was the fix for an
+    # out-of-memory kill rather than a cause of one.
+    #
+    # Measured on a real indexing run of 1,385 chunks
+    # (bench/bench_index_memory.py), peak RSS against the 537 MB cap:
+    #
+    #     arena off    574 MB    343 s    killed by the platform
+    #     arena ON     430 MB    301 s    fits, 107 MB spare, and faster
+    #
+    # The arena allocates a pool once and reuses it. Without it every one
+    # of those 1,385 inferences allocates and frees, and the high-water
+    # mark of that churn is ~200 MB above the model.
+    #
+    # This was off for a while because the arena was measured on *fp16*,
+    # where it looked catastrophic (1,809 MB). That reading was about the
+    # model, not the arena: CPUs have no fp16 kernels, so ONNX Runtime
+    # upcasts every weight to fp32 and the model alone needs ~1 GB. The
+    # conclusion was carried over to int8 without re-measuring, which is
+    # the actual mistake.
+    embedding_mem_arena: bool = True
+
     # ── Indexer process (python -m app.indexing) ─────────────
     #
     # Serves the endpoint above and runs the indexing worker. Separate from
