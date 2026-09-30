@@ -18,7 +18,8 @@ requires-python = ">=3.11,<3.13"
 dependencies = [
     "fastapi==0.118.0",
     "uvicorn[standard]==0.37.0",
-    "pydantic==2.11.9",
+    # 2.12+ required by the `mcp` extra; the full suite passes on this pin.
+    "pydantic==2.13.5",
     "pydantic-settings==2.11.0",
     "python-dotenv==1.1.1",
     "python-multipart==0.0.20",
@@ -93,6 +94,15 @@ eval = [
     "numpy==2.3.3",
     "scipy==1.16.2",
     "pandas==2.3.2",
+]
+
+# -------------------------------------------------------------------------
+# MCP server (`python -m app.mcp_server`). Exposes an indexed repository to
+# MCP hosts. It calls the HTTP API, so httpx from the base set is the only
+# other thing it needs -- none of the indexer's model stack.
+# -------------------------------------------------------------------------
+mcp = [
+    "mcp==2.2.0",
 ]
 
 dev = [
