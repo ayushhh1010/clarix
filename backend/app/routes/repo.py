@@ -31,10 +31,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.content import ContentError, build_tree, fetch_file
 from app.database import get_db
 from app.indexing import queue
 from app.indexing.source import UnsafeSourceError, repo_name_from_url, validate_url
+from app.indexing.wake import schedule_wake
 from app.models import Repository, User
 from app.schemas import (
     PaginatedResponse,
@@ -85,6 +87,7 @@ async def upload_repo(
     if already:
         await queue.enqueue(db, already.id, "full_index", {"ref": None})
         await db.commit()
+        schedule_wake(get_settings().embedding_endpoint)
         logger.info("repo %s re-queued for user %s", already.id, user.id)
         return already
 
@@ -104,6 +107,7 @@ async def upload_repo(
     # repository.
     await queue.enqueue(db, repo.id, "full_index", {"ref": None})
     await db.commit()
+    schedule_wake(get_settings().embedding_endpoint)
     await db.refresh(repo)
 
     logger.info("repo %s queued by user %s: %s", repo.id, user.id, url)
@@ -121,6 +125,8 @@ async def reindex_repo(
     repo = await _get_user_repo(db, repo_id, user)
     job_id = await queue.enqueue(db, repo.id, "full_index", {"force": force})
     await db.commit()
+    if job_id is not None:
+        schedule_wake(get_settings().embedding_endpoint)
     return {
         "repo_id": repo.id,
         "queued": job_id is not None,
