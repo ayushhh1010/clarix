@@ -498,3 +498,65 @@ async def test_empty_repository_completes_without_error(
         )
     ).scalar_one()
     assert status == "ready"
+
+
+# --- repository counters ---------------------------------------------------
+#
+# The UI reads file_count and indexed_token_count straight off the repository
+# row. Both were declared, exposed through the API schema, and never written:
+# a finished repository reported "0 files" next to its chunk count, and the
+# token total was a hardcoded zero.
+
+
+async def test_file_and_token_counts_describe_the_finished_index(
+    async_session, repo_row, tree, chunker
+):
+    await _index(async_session, tree, chunker, FakeEmbedder())
+
+    row = (
+        await async_session.execute(
+            text("SELECT file_count, indexed_token_count FROM repositories "
+                 "WHERE id = :i"),
+            {"i": REPO},
+        )
+    ).one()
+
+    expected = (
+        await async_session.execute(
+            text("SELECT count(DISTINCT file_path), coalesce(sum(token_count), 0) "
+                 "FROM chunks WHERE repo_id = :i"),
+            {"i": REPO},
+        )
+    ).one()
+
+    assert row.file_count == expected[0] > 0
+    assert row.indexed_token_count == expected[1] > 0
+
+
+async def test_file_count_counts_indexed_files_not_files_read(
+    async_session, repo_row, tree, chunker
+):
+    """
+    A file the walker reads but which yields no chunks is not in the index.
+
+    This is why the number is read back from the chunks rather than taken
+    from stats.files_indexed: that counts what the run processed, and a file
+    can be processed without contributing anything searchable.
+    """
+    (tree / "app" / "empty.py").write_text("", encoding="utf-8")
+    stats = await _index(async_session, tree, chunker, FakeEmbedder())
+
+    row = (
+        await async_session.execute(
+            text("SELECT file_count FROM repositories WHERE id = :i"), {"i": REPO}
+        )
+    ).scalar_one()
+    indexed = (
+        await async_session.execute(
+            text("SELECT count(DISTINCT file_path) FROM chunks WHERE repo_id = :i"),
+            {"i": REPO},
+        )
+    ).scalar_one()
+
+    assert row == indexed
+    assert row < stats.files_seen, "the empty file should not count as indexed"

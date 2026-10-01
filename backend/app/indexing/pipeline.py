@@ -468,16 +468,28 @@ async def index_repository(
         # The status flip and the chunk rows commit together: there is no
         # window in which a repository claims to be ready while its index
         # is absent.
+        # file_count and the token total are read back from the rows that
+        # were just written, rather than carried down from the loop.
+        # stats.files_indexed counts what the run processed, and a file can
+        # be read, parsed and still contribute nothing searchable -- an
+        # empty one does. The repository row is asked how large the index
+        # is, which is the files that actually have chunks. Counting it
+        # here cannot drift from those chunks, because this is the same
+        # transaction that wrote them.
         await db.execute(
             text(
                 "UPDATE repositories SET status = 'ready', ingestion_phase = 'done', "
                 "ingestion_progress = 100, chunk_count = :n, "
-                "indexed_chunk_count = :n, indexed_token_count = :tokens, "
+                "indexed_chunk_count = :n, "
+                "file_count = (SELECT count(DISTINCT file_path) FROM chunks "
+                "              WHERE repo_id = :id), "
+                "indexed_token_count = (SELECT coalesce(sum(token_count), 0) "
+                "                       FROM chunks WHERE repo_id = :id), "
                 "index_version = :version, indexed_commit_sha = :commit, "
                 "last_indexed_at = now(), updated_at = now() WHERE id = :id"
             ),
             {
-                "id": repo_id, "n": len(seen), "tokens": 0,
+                "id": repo_id, "n": len(seen),
                 "version": index_version, "commit": commit_id,
             },
         )
